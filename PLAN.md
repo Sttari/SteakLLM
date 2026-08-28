@@ -131,13 +131,13 @@ flowchart LR
   `pre-commit install && pre-commit run --all-files`
   *Reading it:* every hook reports `Passed` or `Skipped (no files to check)`.
   *Done when:* a deliberate test — write `AWS_SECRET_ACCESS_KEY=AKIA...` into a scratch file and try to commit it — is **blocked** by gitleaks; then delete the file.
-- [ ]  **1.8 Full-tree secret scan.** Belt and braces before the first push.
+- [X]  **1.8 Full-tree secret scan.** Belt and braces before the first push.
   `gitleaks detect --source . --verbose`
   *Done when:* "no leaks found".
-- [ ]  **1.9 First commit.**
+- [X]  **1.9 First commit.**
   `git add -A && git commit -m "chore: repo skeleton, hooks, plan"`
   *Done when:* `git log --oneline` shows one commit and the hooks ran during it.
-- [ ]  **1.10 Create the GitHub repo and push.** Decide visibility now: branch protection on the free plan only works on **public** repos, and there is nothing secret in the tree (that's what 1.7 and 1.8 guarantee). Recommended: public from day one; the commit history becomes part of the portfolio.
+- [X]  **1.10 Create the GitHub repo and push.** Decide visibility now: branch protection on the free plan only works on **public** repos, and there is nothing secret in the tree (that's what 1.7 and 1.8 guarantee). Recommended: public from day one; the commit history becomes part of the portfolio.
   `gh repo create SteakLLM --public --source=. --remote=origin --push --description "Document intelligence on EKS: Kafka, Lambda, vLLM/Bedrock, GitOps"`
   *Done when:* `gh repo view --web` opens the repo with the skeleton and README visible.
 - [ ]  **1.11 Protect `main`.** Pull request required, at least one approval not required (solo), status checks required (we'll name them in Step 3), linear history, no force-push, no deletion.

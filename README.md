@@ -1,4 +1,4 @@
-# SteakLLM
+# SteakLLM -- A Learning Path
 
 **Document intelligence on AWS.** Drop a document into a bucket and it is ingested, indexed, summarized and tagged; chat over your documents from a browser; get an alert when a new document matches something you watch. Self-hosted inference on a GPU that exists only while it's needed, with Amazon Bedrock as the bridge and the fallback. Everything is built from code, deployed by pipeline, observable, and able to fail one piece at a time without losing work.
 
@@ -37,34 +37,35 @@ Three loops share one cluster. The **upload path** is event-driven and eventuall
 
 ## Why each tool
 
-| Tool | Its job here | What we'd lose without it |
-|---|---|---|
-| Kafka (Strimzi) | Ordered, durable event log with independent readers and replay | Two consumers of one event; rebuilding the index from history |
-| Lambda + EventBridge | The S3 doorbell and the nightly GPU safety net; runs only when something happens | A process polling S3 all day |
-| EKS + Karpenter + KEDA | Place and heal services; summon the GPU node on demand and remove it when idle | A GPU billing 24/7 or a hand-run start/stop |
-| Terraform | AWS from code, applied by the pipeline | Console clicks nobody can reproduce |
-| GitHub Actions + Argo CD | CI for every commit; CD for AWS (Terraform) and for the cluster (GitOps) | Deploying by SSH |
-| DynamoDB + S3 + Qdrant | Catalog and status; documents and model weights; vectors | State living on one machine |
-| Bedrock | Serverless LLM for the 3–5 minute GPU cold start and for fallback | Chat going dark whenever the GPU is off |
-| Prometheus · Grafana · Loki · OpenTelemetry | Numbers, charts, logs, and one trace across the whole pipeline | Guessing which hop is slow |
-| Secrets Manager · IAM OIDC · Pod Identity · NetworkPolicies · WAF | No secret in git or on disk; one least-privilege role per service; one public door | The prototype's leaked key, again |
+
+| Tool                                                                  | Its job here                                                                       | What we'd lose without it                                     |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Kafka (Strimzi)                                                       | Ordered, durable event log with independent readers and replay                     | Two consumers of one event; rebuilding the index from history |
+| Lambda + EventBridge                                                  | The S3 doorbell and the nightly GPU safety net; runs only when something happens   | A process polling S3 all day                                  |
+| EKS + Karpenter + KEDA                                                | Place and heal services; summon the GPU node on demand and remove it when idle     | A GPU billing 24/7 or a hand-run start/stop                   |
+| Terraform                                                             | AWS from code, applied by the pipeline                                             | Console clicks nobody can reproduce                           |
+| GitHub Actions + Argo CD                                              | CI for every commit; CD for AWS (Terraform) and for the cluster (GitOps)           | Deploying by SSH                                              |
+| DynamoDB + S3 + Qdrant                                                | Catalog and status; documents and model weights; vectors                           | State living on one machine                                   |
+| Bedrock                                                               | Serverless LLM for the 3–5 minute GPU cold start and for fallback                 | Chat going dark whenever the GPU is off                       |
+| Prometheus · Grafana · Loki · OpenTelemetry                        | Numbers, charts, logs, and one trace across the whole pipeline                     | Guessing which hop is slow                                    |
+| Secrets Manager · IAM OIDC · Pod Identity · NetworkPolicies · WAF | No secret in git or on disk; one least-privilege role per service; one public door | The prototype's leaked key, again                             |
 
 The complete table with the alternative rejected for each choice is in [`PLAN.md`](PLAN.md#the-architecture-in-one-page); the reasoning behind each decision will live in [`docs/adr/`](docs/adr/).
 
 ## Roadmap
 
-- [ ] **1.** Set up the git repo — skeleton, secret-scanning hooks, protected `main`, first PR
-- [ ] **2.** Bootstrap AWS once by hand — Terraform state bucket, GitHub OIDC roles, budget alarms
-- [ ] **3.** CI/CD pipeline — lint, test, scan, plan on PR, apply on merge, images to ECR
-- [ ] **4.** Event contracts — versioned schemas and the idempotency rules
-- [ ] **5.** Local dev stack — Kafka, MinIO, DynamoDB Local, Qdrant, TEI, Open WebUI on the laptop
-- [ ] **6.** The five services with tests — gateway, embedder, summarizer, notifier, ingest
-- [ ] **7.** Network and cluster — VPC, EKS, the always-on CPU node, Argo CD
-- [ ] **8.** Platform services by GitOps — monitoring, Kafka, Qdrant, secrets, the one public door
-- [ ] **9.** GPU pool — Karpenter, KEDA, vLLM summoned on demand
-- [ ] **10.** Cloud event pipeline and chaos drills — S3, EventBridge, Lambda, DynamoDB, SNS
-- [ ] **11.** Bedrock fallback, tracing, alerts, SLOs, cost dashboard
-- [ ] **12.** Portfolio polish — demo mode, ADRs, walkthrough, public repo
+- [ ]  **1.** Set up the git repo — skeleton, secret-scanning hooks, protected `main`, first PR
+- [ ]  **2.** Bootstrap AWS once by hand — Terraform state bucket, GitHub OIDC roles, budget alarms
+- [ ]  **3.** CI/CD pipeline — lint, test, scan, plan on PR, apply on merge, images to ECR
+- [ ]  **4.** Event contracts — versioned schemas and the idempotency rules
+- [ ]  **5.** Local dev stack — Kafka, MinIO, DynamoDB Local, Qdrant, TEI, Open WebUI on the laptop
+- [ ]  **6.** The five services with tests — gateway, embedder, summarizer, notifier, ingest
+- [ ]  **7.** Network and cluster — VPC, EKS, the always-on CPU node, Argo CD
+- [ ]  **8.** Platform services by GitOps — monitoring, Kafka, Qdrant, secrets, the one public door
+- [ ]  **9.** GPU pool — Karpenter, KEDA, vLLM summoned on demand
+- [ ]  **10.** Cloud event pipeline and chaos drills — S3, EventBridge, Lambda, DynamoDB, SNS
+- [ ]  **11.** Bedrock fallback, tracing, alerts, SLOs, cost dashboard
+- [ ]  **12.** Portfolio polish — demo mode, ADRs, walkthrough, public repo
 
 ## Cost
 
