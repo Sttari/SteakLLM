@@ -1,0 +1,43 @@
+# Dependabot version updates — one PR per outdated pin, weekly, grouped so the inbox stays sane.
+# Ecosystems whose folders don't exist yet (infra/, services/) become active the moment the folders appear.
+version: 2
+updates:
+  # GitHub Actions used in .github/workflows/*.yml (Step 3)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Terraform providers and modules (Step 2 onward)
+  - package-ecosystem: "terraform"
+    directories: ["/infra/*"]
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      terraform:
+        patterns: ["*"]
+
+  # Base images in the services' Dockerfiles and the local compose stack (Steps 5–6)
+  - package-ecosystem: "docker"
+    directories: ["/services/*", "/compose"]
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      images:
+        patterns: ["*"]
+
+  # Python dependencies managed by uv (pyproject.toml + uv.lock) (Step 6)
+  - package-ecosystem: "uv"
+    directories: ["/services/*"]
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      python:
+        patterns: ["*"]
