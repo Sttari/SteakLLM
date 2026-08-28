@@ -1,0 +1,23 @@
+# Proves the GitHub → AWS trust with no stored key: request an OIDC token, assume the plan role, print who we are.
+# Run by hand: gh workflow run oidc-smoke.yml && gh run watch
+name: oidc-smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # allows the job to request the OIDC token
+  contents: read
+
+jobs:
+  whoami:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assume the plan role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Who am I?
+        run: aws sts get-caller-identity
