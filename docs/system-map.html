@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SteakLLM System Map</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg: #F5F6F3;
+    --surface: #FFFFFF;
+    --ink: #1A2129;
+    --muted: #5C6670;
+    --line: #C3CAC6;
+    --node-stroke: #8A949B;
+    --kafka: #E7EEE9;
+    --up: #0E7A6B;
+    --chat: #2F4FCB;
+    --up-soft: #D9EDE8;
+    --chat-soft: #DEE4FA;
+    --ops-soft: #E6E9EB;
+    --focus: #2F4FCB;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12181D;
+      --surface: #1B232A;
+      --ink: #E4E9E6;
+      --muted: #98A3AC;
+      --line: #3B4650;
+      --node-stroke: #5E6A74;
+      --kafka: #22303A;
+      --up: #43C2AB;
+      --chat: #8CA1F5;
+      --up-soft: #163B36;
+      --chat-soft: #26305A;
+      --ops-soft: #262F36;
+      --focus: #8CA1F5;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12181D;
+    --surface: #1B232A;
+    --ink: #E4E9E6;
+    --muted: #98A3AC;
+    --line: #3B4650;
+    --node-stroke: #5E6A74;
+    --kafka: #22303A;
+    --up: #43C2AB;
+    --chat: #8CA1F5;
+    --up-soft: #163B36;
+    --chat-soft: #26305A;
+    --ops-soft: #262F36;
+    --focus: #8CA1F5;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    margin: 0;
+  }
+  main {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 40px 24px 64px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+  header { display: flex; flex-direction: column; gap: 8px; max-width: 70ch; }
+  .eyebrow {
+    font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  h1 {
+    font-size: 30px;
+    font-weight: 600;
+    line-height: 1.15;
+    margin: 0;
+    letter-spacing: -.01em;
+    text-wrap: balance;
+  }
+  .lede { margin: 0; color: var(--muted); }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .controls .label {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 11.5px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-right: 4px;
+  }
+  .controls button {
+    font: 500 13px 'IBM Plex Sans', sans-serif;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 6px 14px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .controls button:hover { border-color: var(--node-stroke); }
+  .controls button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .controls button[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+  .chip { width: 22px; height: 0; border-top: 2px solid var(--muted); display: inline-block; }
+  .chip.up { border-color: var(--up); }
+  .chip.chat { border-color: var(--chat); }
+  .chip.ops { border-top-style: dashed; }
+
+  figure { margin: 0; display: flex; flex-direction: column; gap: 12px; }
+  .scroller {
+    overflow-x: auto;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px;
+  }
+  svg.map { display: block; width: 100%; min-width: 1000px; height: auto; color: var(--ink); }
+  figcaption { color: var(--muted); font-size: 14px; max-width: 80ch; }
+
+  /* --- diagram styling --- */
+  svg.map text { font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .box rect { fill: none; stroke: var(--line); stroke-width: 1.2; }
+  .box.aws rect { stroke-dasharray: 7 5; }
+  .box text { font-size: 10.5px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; fill: var(--muted); }
+  .node rect { fill: var(--surface); stroke: var(--node-stroke); stroke-width: 1.2; }
+  .node.kafka rect { fill: var(--kafka); }
+  .node .t { font-family: 'IBM Plex Sans', sans-serif; font-size: 12.5px; font-weight: 600; fill: var(--ink); }
+  .node .s { font-size: 10px; fill: var(--muted); }
+  .note { font-size: 10px; fill: var(--muted); font-style: italic; }
+  .edge path { fill: none; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+  .edge text { font-size: 10.5px; }
+  .e-up path { stroke: var(--up); }   .e-up text { fill: var(--up); }
+  .e-chat path { stroke: var(--chat); } .e-chat text { fill: var(--chat); }
+  .e-ops path { stroke: var(--muted); } .e-ops text { fill: var(--muted); }
+  .dashed path { stroke-dasharray: 5 4; }
+  .mk-up { fill: var(--up); } .mk-chat { fill: var(--chat); } .mk-ops { fill: var(--muted); }
+
+  .edge, .node { transition: opacity .25s ease; }
+  svg[data-filter="upload"] .edge:not(.e-up),
+  svg[data-filter="chat"] .edge:not(.e-chat),
+  svg[data-filter="ops"] .edge:not(.e-ops) { opacity: .08; }
+  svg[data-filter="upload"] .node:not([data-flows~="upload"]),
+  svg[data-filter="chat"] .node:not([data-flows~="chat"]),
+  svg[data-filter="ops"] .node:not([data-flows~="ops"]) { opacity: .28; }
+  @media (prefers-reduced-motion: reduce) { .edge, .node { transition: none; } }
+
+  .loops { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .loop {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 16px 18px;
+    background: var(--surface);
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .loop h2 { font-size: 15px; font-weight: 600; margin: 0; display: flex; align-items: center; gap: 10px; }
+  .loop p { margin: 0; font-size: 14px; color: var(--ink); }
+  .loop .kind {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--muted);
+  }
+  .notes { max-width: 80ch; color: var(--muted); font-size: 14px; }
+  .notes strong { color: var(--ink); font-weight: 600; }
+  code { font-family: 'IBM Plex Mono', monospace; font-size: .92em; }
+</style>
+</head>
+<body style="margin:0">
+
+<main>
+  <header>
+    <div class="eyebrow">SteakLLM · v2 architecture · Aug 2026</div>
+    <h1>How the services talk to each other</h1>
+    <p class="lede">One cluster, three loops. Documents move along the teal path (event-driven, eventually consistent), chat along the blue path (request/response), and code reaches the cluster along the dashed grey path (git → pipeline → cluster). Every arrow is labeled with what crosses it.</p>
+  </header>
+
+  <div class="controls" role="group" aria-label="Highlight one loop">
+    <span class="label">Show</span>
+    <button type="button" data-filter="all" aria-pressed="true">Everything</button>
+    <button type="button" data-filter="upload" aria-pressed="false"><span class="chip up"></span>Upload path</button>
+    <button type="button" data-filter="chat" aria-pressed="false"><span class="chip chat"></span>Chat path</button>
+    <button type="button" data-filter="ops" aria-pressed="false"><span class="chip ops"></span>Delivery &amp; ops</button>
+  </div>
+
+  <figure>
+    <div class="scroller">
+      <svg class="map" viewBox="0 0 1370 800" role="img" aria-label="System map: a user uploads to S3, EventBridge invokes the ingest Lambda, which records the document in DynamoDB and writes an event to Kafka inside the EKS cluster; embedder, summarizer and notifier workers consume it and write to Qdrant, DynamoDB and SNS. Chat goes through the ALB to the gateway, which calls vLLM on a scale-to-zero GPU node or falls back to Bedrock. GitHub Actions pushes images to ECR and runs Terraform; Argo CD pulls manifests into the cluster; Karpenter creates and removes the GPU node.">
+        <defs>
+          <marker id="arr-up" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="mk-up"/>
+          </marker>
+          <marker id="arr-chat" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="mk-chat"/>
+          </marker>
+          <marker id="arr-ops" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="mk-ops"/>
+          </marker>
+        </defs>
+
+        <!-- ===== containers ===== -->
+        <g class="box aws"><rect x="210" y="24" width="1140" height="626" rx="6"/><text x="222" y="44">AWS · us-east-1</text></g>
+        <g class="box"><rect x="440" y="50" width="760" height="525" rx="6"/><text x="452" y="68">EKS cluster</text></g>
+        <g class="box"><rect x="460" y="80" width="540" height="450" rx="6"/><text x="992" y="522" text-anchor="end">CPU node · always on · t4g.large</text></g>
+        <g class="box"><rect x="1020" y="80" width="160" height="170" rx="6"/><text x="1030" y="96">GPU node · scale to 0</text></g>
+
+        <!-- ===== edges: chat path (blue) ===== -->
+        <g class="edge e-chat"><path d="M184,95 H240" marker-end="url(#arr-chat)"/><text x="212" y="88" text-anchor="middle">https</text></g>
+        <g class="edge e-chat"><path d="M400,95 H820 V110" marker-end="url(#arr-chat)"/><text x="610" y="89" text-anchor="middle">public HTTPS · bearer key</text></g>
+        <g class="edge e-chat dashed"><path d="M184,112 H215 V150 H480" marker-end="url(#arr-chat)"/><text x="348" y="144" text-anchor="middle">tailnet · private</text></g>
+        <g class="edge e-chat"><path d="M620,135 H790" marker-end="url(#arr-chat)"/><text x="705" y="129" text-anchor="middle">/v1</text></g>
+        <g class="edge e-up e-chat"><path d="M950,135 H1040" marker-end="url(#arr-chat)"/><text x="995" y="129" text-anchor="middle">chat</text></g>
+        <g class="edge e-chat"><path d="M920,160 V300" marker-end="url(#arr-chat)"/><text x="914" y="232" text-anchor="end">retrieve</text><text x="914" y="244" text-anchor="end">top-k</text></g>
+        <g class="edge e-up e-chat dashed"><path d="M900,110 V68 H1270 V110" marker-end="url(#arr-chat)"/><text x="1085" y="63" text-anchor="middle">fallback when GPU = 0</text></g>
+        <g class="edge e-chat"><path d="M810,160 V210" marker-end="url(#arr-chat)"/><text x="816" y="190">ChatCompleted</text></g>
+
+        <!-- ===== edges: upload path (teal) ===== -->
+        <g class="edge e-up"><path d="M104,120 V215 H240" marker-end="url(#arr-up)"/><text x="112" y="165">upload via</text><text x="112" y="177">presigned URL</text></g>
+        <g class="edge e-up"><path d="M320,240 V280" marker-end="url(#arr-up)"/><text x="328" y="264">ObjectCreated</text></g>
+        <g class="edge e-up"><path d="M320,330 V370" marker-end="url(#arr-up)"/><text x="328" y="354">invoke</text></g>
+        <g class="edge e-up"><path d="M320,420 V460" marker-end="url(#arr-up)"/><text x="328" y="444">status: uploaded</text></g>
+        <g class="edge e-up"><path d="M400,380 H430 V235 H480" marker-end="url(#arr-up)"/><text x="424" y="310" text-anchor="middle" transform="rotate(-90 424 310)">DocumentUploaded</text></g>
+        <g class="edge e-up"><path d="M532,260 V300" marker-end="url(#arr-up)"/><text x="538" y="284">SummaryReady</text></g>
+        <g class="edge e-up"><path d="M662,260 V300" marker-start="url(#arr-up)" marker-end="url(#arr-up)"/><text x="668" y="278">↓ DocumentUploaded</text><text x="668" y="290">↑ SummaryReady</text></g>
+        <g class="edge e-up"><path d="M787,260 V300" marker-start="url(#arr-up)" marker-end="url(#arr-up)"/><text x="793" y="278">↓ DocumentUploaded</text><text x="793" y="290">↑ DocumentIndexed</text></g>
+        <g class="edge e-up"><path d="M787,350 V388 H880" marker-end="url(#arr-up)"/><text x="795" y="381">embed</text></g>
+        <g class="edge e-up"><path d="M835,325 H880" marker-end="url(#arr-up)"/><text x="857" y="319" text-anchor="middle">upsert</text></g>
+        <g class="edge e-up"><path d="M680,350 V428 H988 V175 H940 V160" marker-end="url(#arr-up)"/><text x="834" y="422" text-anchor="middle">asks LLM via gateway</text></g>
+        <g class="edge e-up"><path d="M640,350 V410 H420 V485 H400" marker-end="url(#arr-up)"/><text x="530" y="404" text-anchor="middle">summary + tags</text></g>
+        <g class="edge e-up"><path d="M532,350 V372 H412 V575 H400" marker-end="url(#arr-up)"/><text x="472" y="366" text-anchor="middle">alert</text></g>
+
+        <!-- ===== edges: delivery & ops (grey) ===== -->
+        <g class="edge e-ops"><path d="M184,715 H230" marker-end="url(#arr-ops)"/><text x="207" y="708" text-anchor="middle">push</text></g>
+        <g class="edge e-ops"><path d="M315,690 V650" marker-end="url(#arr-ops)"/><text x="322" y="668">terraform apply</text><text x="322" y="681">VPC · EKS · IAM · S3 · Lambda</text></g>
+        <g class="edge e-ops"><path d="M400,715 H540 V640" marker-end="url(#arr-ops)"/><text x="410" y="731">push image · tag = git SHA</text></g>
+        <g class="edge e-ops"><path d="M540,590 V530" marker-end="url(#arr-ops)"/><text x="547" y="563">nodes pull images</text></g>
+        <g class="edge e-ops"><path d="M925,590 V530" marker-end="url(#arr-ops)"/><text x="932" y="563">External Secrets → pods</text></g>
+        <g class="edge e-ops dashed"><path d="M104,740 V770 H760 V502" marker-end="url(#arr-ops)"/><text x="640" y="764" text-anchor="middle">Argo pulls manifests · GitOps</text></g>
+        <g class="edge e-ops dashed"><path d="M940,477 H1100 V250" marker-end="url(#arr-ops)"/><text x="1092" y="365" text-anchor="middle" transform="rotate(-90 1092 365)">creates / removes the GPU node</text></g>
+        <g class="edge e-ops dashed"><path d="M1270,300 V215 H1180" marker-end="url(#arr-ops)"/><text x="1188" y="209">terminate stray GPU</text></g>
+
+        <!-- ===== nodes: outside AWS ===== -->
+        <g class="node" data-flows="upload chat"><rect x="24" y="70" width="160" height="50" rx="4"/><text class="t" x="104" y="91" text-anchor="middle">You</text><text class="s" x="104" y="107" text-anchor="middle">browser · phone</text></g>
+        <g class="node" data-flows="ops"><rect x="24" y="690" width="160" height="50" rx="4"/><text class="t" x="104" y="711" text-anchor="middle">GitHub repo</text><text class="s" x="104" y="727" text-anchor="middle">code · charts · terraform</text></g>
+        <g class="node" data-flows="ops"><rect x="230" y="690" width="170" height="50" rx="4"/><text class="t" x="315" y="711" text-anchor="middle">GitHub Actions</text><text class="s" x="315" y="727" text-anchor="middle">lint · test · build · scan</text></g>
+
+        <!-- ===== nodes: AWS, left column ===== -->
+        <g class="node" data-flows="chat"><rect x="240" y="70" width="160" height="50" rx="4"/><text class="t" x="320" y="91" text-anchor="middle">ALB + TLS</text><text class="s" x="320" y="107" text-anchor="middle">the one public door</text></g>
+        <g class="node" data-flows="upload ops"><rect x="240" y="190" width="160" height="50" rx="4"/><text class="t" x="320" y="211" text-anchor="middle">S3</text><text class="s" x="320" y="227" text-anchor="middle">docs · weights · tf state</text></g>
+        <g class="node" data-flows="upload"><rect x="240" y="280" width="160" height="50" rx="4"/><text class="t" x="320" y="301" text-anchor="middle">EventBridge</text><text class="s" x="320" y="317" text-anchor="middle">rule: ObjectCreated</text></g>
+        <g class="node" data-flows="upload"><rect x="240" y="370" width="160" height="50" rx="4"/><text class="t" x="320" y="391" text-anchor="middle">Lambda · ingest</text><text class="s" x="320" y="407" text-anchor="middle">validate · hash · record</text></g>
+        <g class="node" data-flows="upload"><rect x="240" y="460" width="160" height="50" rx="4"/><text class="t" x="320" y="481" text-anchor="middle">DynamoDB</text><text class="s" x="320" y="497" text-anchor="middle">catalog · status · tags</text></g>
+        <g class="node" data-flows="upload"><rect x="240" y="550" width="160" height="50" rx="4"/><text class="t" x="320" y="571" text-anchor="middle">SNS</text><text class="s" x="320" y="587" text-anchor="middle">→ your email · Slack</text></g>
+
+        <!-- ===== nodes: inside the CPU node ===== -->
+        <g class="node" data-flows="chat"><rect x="480" y="110" width="140" height="50" rx="4"/><text class="t" x="550" y="131" text-anchor="middle">Open WebUI</text><text class="s" x="550" y="147" text-anchor="middle">chat window</text></g>
+        <g class="node" data-flows="chat upload"><rect x="790" y="110" width="160" height="50" rx="4"/><text class="t" x="870" y="131" text-anchor="middle">gateway</text><text class="s" x="870" y="147" text-anchor="middle">FastAPI · /v1 · routing</text></g>
+        <g class="node kafka" data-flows="upload chat"><rect x="480" y="210" width="370" height="50" rx="4"/><text class="t" x="665" y="231" text-anchor="middle">Kafka · Strimzi</text><text class="s" x="665" y="247" text-anchor="middle">topics: documents · chats — ordered, durable, replayable</text></g>
+        <g class="node" data-flows="upload"><rect x="480" y="300" width="105" height="50" rx="4"/><text class="t" x="532" y="321" text-anchor="middle">notifier</text><text class="s" x="532" y="337" text-anchor="middle">watch-list</text></g>
+        <g class="node" data-flows="upload"><rect x="605" y="300" width="115" height="50" rx="4"/><text class="t" x="662" y="321" text-anchor="middle">summarizer</text><text class="s" x="662" y="337" text-anchor="middle">asks the LLM</text></g>
+        <g class="node" data-flows="upload"><rect x="740" y="300" width="95" height="50" rx="4"/><text class="t" x="787" y="321" text-anchor="middle">embedder</text><text class="s" x="787" y="337" text-anchor="middle">chunk · embed</text></g>
+        <g class="node" data-flows="chat upload"><rect x="880" y="300" width="95" height="50" rx="4"/><text class="t" x="927" y="321" text-anchor="middle">Qdrant</text><text class="s" x="927" y="337" text-anchor="middle">vectors</text></g>
+        <g class="node" data-flows="upload"><rect x="880" y="366" width="95" height="44" rx="4"/><text class="t" x="927" y="385" text-anchor="middle">TEI</text><text class="s" x="927" y="400" text-anchor="middle">embed model</text></g>
+        <g class="node" data-flows="ops"><rect x="480" y="452" width="210" height="50" rx="4"/><text class="t" x="585" y="473" text-anchor="middle">Prometheus · Grafana · Loki</text><text class="s" x="585" y="489" text-anchor="middle">metrics · dashboards · logs</text></g>
+        <g class="node" data-flows="ops"><rect x="710" y="452" width="100" height="50" rx="4"/><text class="t" x="760" y="473" text-anchor="middle">Argo CD</text><text class="s" x="760" y="489" text-anchor="middle">cluster = git</text></g>
+        <g class="node" data-flows="ops"><rect x="830" y="452" width="110" height="50" rx="4"/><text class="t" x="885" y="473" text-anchor="middle">Karpenter</text><text class="s" x="885" y="489" text-anchor="middle">nodes on demand</text></g>
+
+        <!-- ===== nodes: GPU node ===== -->
+        <g class="node" data-flows="chat upload"><rect x="1040" y="110" width="120" height="50" rx="4"/><text class="t" x="1100" y="131" text-anchor="middle">vLLM</text><text class="s" x="1100" y="147" text-anchor="middle">Qwen3-8B-FP8 · L4</text></g>
+        <text class="note" x="1100" y="196" text-anchor="middle">exists only while</text>
+        <text class="note" x="1100" y="210" text-anchor="middle">vLLM's pod runs</text>
+
+        <!-- ===== nodes: AWS, right column & below cluster ===== -->
+        <g class="node" data-flows="chat"><rect x="1210" y="110" width="120" height="50" rx="4"/><text class="t" x="1270" y="131" text-anchor="middle">Bedrock</text><text class="s" x="1270" y="147" text-anchor="middle">managed LLMs</text></g>
+        <g class="node" data-flows="ops"><rect x="1210" y="300" width="120" height="50" rx="4"/><text class="t" x="1270" y="321" text-anchor="middle">Lambda nightly</text><text class="s" x="1270" y="337" text-anchor="middle">GPU safety net</text></g>
+        <g class="node" data-flows="ops"><rect x="480" y="590" width="120" height="50" rx="4"/><text class="t" x="540" y="611" text-anchor="middle">ECR</text><text class="s" x="540" y="627" text-anchor="middle">images · git SHA</text></g>
+        <g class="node" data-flows="ops"><rect x="860" y="590" width="130" height="50" rx="4"/><text class="t" x="925" y="611" text-anchor="middle">Secrets Manager</text><text class="s" x="925" y="627" text-anchor="middle">keys · passwords</text></g>
+      </svg>
+    </div>
+    <figcaption>Solid teal: document events, from the S3 upload to the SNS alert. Solid blue: chat requests, from the browser to the model. Dashed grey: pulls, fallbacks and lifecycle actions that run beside the data. Arrows with two heads are worker teams that both read from and write to the Kafka logbook.</figcaption>
+  </figure>
+
+  <section class="loops" aria-label="The three loops">
+    <div class="loop">
+      <h2><span class="chip up"></span>Upload path</h2>
+      <span class="kind">event-driven · eventually consistent</span>
+      <p>The upload itself is the trigger: S3 tells EventBridge, EventBridge invokes the ingest Lambda, the Lambda records "uploaded" in DynamoDB and writes one <code>DocumentUploaded</code> line in Kafka, then walks away. Three worker teams read the logbook at their own pace. The embedder chunks and embeds into Qdrant; the summarizer asks the LLM (through the gateway, so it gets the same vLLM-or-Bedrock routing as chat) and writes summary and tags to the catalog; the notifier turns <code>SummaryReady</code> into an SNS alert. If the GPU node is off, the summarizer's lines simply wait in the logbook.</p>
+    </div>
+    <div class="loop">
+      <h2><span class="chip chat"></span>Chat path</h2>
+      <span class="kind">request / response</span>
+      <p>Two doors, one gateway. The public door is the ALB with TLS and a bearer key; the private door is Open WebUI over the tailnet. Both land on the gateway, which speaks the OpenAI contract: <code>model=llm</code> goes straight to vLLM, <code>model=docs</code> first retrieves top-k chunks from Qdrant and stuffs them into the prompt. When the GPU node is scaled to zero or unhealthy, the gateway falls back to Bedrock and says so in the response. Every completed chat becomes a <code>ChatCompleted</code> line in Kafka for the usage and cost dashboard.</p>
+    </div>
+    <div class="loop">
+      <h2><span class="chip ops"></span>Delivery &amp; ops</h2>
+      <span class="kind">git → pipeline → cluster</span>
+      <p>A push runs GitHub Actions: lint, tests, image build, vulnerability and secret scans, and a Terraform plan. On merge, Actions pushes images to ECR (tagged with the git SHA) and applies Terraform to AWS using a short-lived OIDC role, never a stored key. Argo CD, living inside the cluster, pulls the manifests and makes the cluster match git. Karpenter creates the GPU node the moment vLLM's pod asks for one and removes it when the pod is gone; the nightly Lambda terminates any GPU that survived anyway.</p>
+    </div>
+  </section>
+
+  <p class="notes"><strong>Not drawn, on purpose.</strong> Prometheus scrapes <code>/metrics</code> from every pod (vLLM, Kafka, the workers) and Loki collects every pod's logs, so drawing those arrows would connect everything to everything. Each service wears its own IAM role (Pod Identity), and default-deny NetworkPolicies allow only the arrows shown here. Terraform also builds the VPC, subnets and NAT that all of this sits inside.</p>
+</main>
+
+<script>
+  (function () {
+    var svg = document.querySelector('svg.map');
+    var buttons = Array.prototype.slice.call(document.querySelectorAll('.controls button'));
+    function apply(filter) {
+      if (filter === 'all') { svg.removeAttribute('data-filter'); } else { svg.setAttribute('data-filter', filter); }
+      buttons.forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.filter === filter)); });
+      try { localStorage.setItem('steakllm-map-filter', filter); } catch (e) {}
+    }
+    buttons.forEach(function (b) { b.addEventListener('click', function () { apply(b.dataset.filter); }); });
+    var saved = null;
+    try { saved = localStorage.getItem('steakllm-map-filter'); } catch (e) {}
+    if (saved && saved !== 'all') { apply(saved); }
+  })();
+</script>
+
+</body>
+</html>

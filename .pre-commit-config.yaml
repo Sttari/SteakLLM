@@ -1,0 +1,38 @@
+# Pre-commit hooks — run on the laptop before a commit exists. CI runs the same checks again on every push.
+# Pins (rev) are bumped with `pre-commit autoupdate`; Dependabot proposes bumps too.
+repos:
+  # Secrets: the reason this file exists. Scans the staged diff for keys, tokens and passwords.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
+
+  # Generic hygiene from the pre-commit project itself.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: detect-private-key          # second net for *.pem / *.key contents pasted into any file
+      - id: detect-aws-credentials
+        args: ["--allow-missing-credentials"]
+      - id: check-added-large-files     # no model weights or datasets in git (default limit 500 kB)
+      - id: check-merge-conflict
+      - id: check-yaml
+        args: ["--allow-multiple-documents"]   # Kubernetes manifests are multi-document YAML
+      - id: check-json
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        args: ["--markdown-linebreak-ext=md"]
+
+  # Terraform formatting (needs `terraform` on PATH). Validation and tflint run in CI, where modules are initialised.
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.109.0
+    hooks:
+      - id: terraform_fmt
+
+  # Python lint + format (ruff replaces flake8, isort and black).
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.5
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format

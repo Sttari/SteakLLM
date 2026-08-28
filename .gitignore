@@ -1,0 +1,77 @@
+# .gitignore — SteakLLM
+# Rule of thumb: if a file holds a secret, is generated, or is personal to one machine, it does not belong in git.
+# Negations (!) must come AFTER the pattern they carve an exception out of.
+
+# ---------- Secrets and per-machine config (never committed, no exceptions) ----------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.tfvars
+*.tfvars.json
+!*.example.tfvars
+kubeconfig*
+*.kubeconfig
+.aws/
+.tailscale/
+
+# ---------- Terraform (generated, machine-local, or secret-bearing) ----------
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+# Deliberately NOT ignored: .terraform.lock.hcl — it pins provider versions (pin, then distrust the pin).
+
+# ---------- Python (uv-managed; the lockfile uv.lock IS committed) ----------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+build/
+dist/
+.coverage
+coverage.xml
+htmlcov/
+
+# ---------- Node (tooling only, e.g. Renovate config checks) ----------
+node_modules/
+
+# ---------- Helm and Kubernetes (downloaded dependency charts and packaged charts are rebuilt on demand) ----------
+charts/**/charts/
+*.tgz
+# Deliberately NOT ignored: Chart.lock — same reason as the Terraform lockfile.
+
+# ---------- Local dev stack (data volumes, downloaded models, sample outputs) ----------
+compose/data/
+compose/**/data/
+shared-local-instance.db
+*.db
+.cache/
+models/
+
+# ---------- Editors and operating system ----------
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+.obsidian/
+
+# ---------- Assistant tooling (per-machine settings only; CLAUDE.md itself is committed) ----------
+.claude/settings.local.json
