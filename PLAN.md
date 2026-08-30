@@ -2,7 +2,7 @@
 
 A document-intelligence platform on AWS: drop a document in a bucket and it is ingested, indexed, summarized and tagged; chat over it from a browser; get alerted when a new document matches something you watch. Built as a portfolio project that a reviewer can rebuild from the README and defend in a design review.
 
-Worked through with Claude under the teaching contract in `CLAUDE.md`: every step explained → shown → run → interpreted → checkpointed, one at a time. Tick boxes as we go. **Step 1 is written in full; Steps 2–12 are architecture-level and get their full plan when we reach them.**
+Worked through with Claude under the teaching contract in `CLAUDE.md`: every step explained → shown → run → interpreted → checkpointed, one at a time. Tick boxes as we go. **Steps 1–2 are written in full; Steps 3–12 are architecture-level and get their full plan when we reach them.** Step 1 completed Aug 28 2026.
 
 The earlier `../vllm_server/` project was the prototype. Nothing here depends on it; it can be torn down whenever we like.
 
@@ -108,7 +108,7 @@ flowchart LR
   *Done when:* all eight print a version.
 - [X]  **1.3 GitHub identity.** Sign in from the terminal so `gh` can create repos and PRs for us.
   `gh auth login` (GitHub.com → HTTPS → login with browser).
-  *Done when:* `gh auth status` shows your account, and `git config --global user.namegit ` / `user.email` match it.
+  *Done when:* `gh auth status` shows your account, and `git config --global user.name` / `user.email` match it.
 - [X]  **1.4 Initialize.** `main` from the first commit; no `master` rename later.
   `git init -b main`
   *Done when:* `git status` says "On branch main, No commits yet".
@@ -140,25 +140,59 @@ flowchart LR
 - [X]  **1.10 Create the GitHub repo and push.** Decide visibility now: branch protection on the free plan only works on **public** repos, and there is nothing secret in the tree (that's what 1.7 and 1.8 guarantee). Recommended: public from day one; the commit history becomes part of the portfolio.
   `gh repo create SteakLLM --public --source=. --remote=origin --push --description "Document intelligence on EKS: Kafka, Lambda, vLLM/Bedrock, GitOps"`
   *Done when:* `gh repo view --web` opens the repo with the skeleton and README visible.
-- [ ]  **1.11 Protect `main`.** Pull request required, at least one approval not required (solo), status checks required (we'll name them in Step 3), linear history, no force-push, no deletion.
+- [X]  **1.11 Protect `main`.** Pull request required, at least one approval not required (solo), status checks required (we'll name them in Step 3), linear history, no force-push, no deletion.
   `gh api -X PUT repos/{owner}/SteakLLM/branches/main/protection --input protection.json` (we write the JSON together), or Settings → Branches in the UI.
   *Done when:* `git push origin main` with a direct commit is **rejected**, and the same change through a PR is accepted.
-- [ ]  **1.12 Prove the loop.** One tiny change (a word in the README) through the real path.
+- [X]  **1.12 Prove the loop.** One tiny change (a word in the README) through the real path.
   `git switch -c chore/prove-the-loop` → edit → commit → `gh pr create --fill` → `gh pr merge --squash --delete-branch` → `git switch main && git pull`.
   *Done when:* the merge commit is on `main`, the branch is gone, and the hooks ran on the commit.
-- [ ]  **1.13 Renovate or Dependabot.** Turn on automated dependency PRs now, while the repo is empty, so every pin we add from here is watched from birth.
+- [X]  **1.13 Renovate or Dependabot.** Turn on automated dependency PRs now, while the repo is empty, so every pin we add from here is watched from birth.
   `.github/dependabot.yml` covering `github-actions`, `pip` (uv), `docker`, `terraform`; weekly.
   *Done when:* the Dependabot tab shows the ecosystems enabled.
-- [ ]  **1.14 Field notes.** Open `docs/field-notes.md` with §1 setup snapshot (tool versions, repo URL) and an empty incident log.
+- [X]  **1.14 Field notes.** Open `docs/field-notes.md` with §1 setup snapshot (tool versions, repo URL) and an empty incident log.
 
 **Step 1 done when:** the repo is on GitHub with the skeleton; hooks pass and a fake secret was proven to be blocked; `main` cannot be pushed directly and one PR has been merged; Dependabot is on; field notes exist. No AWS resource has been touched yet, and nothing costs money.
 
 ---
 
-## Steps 2–12 (architecture-level; each gets its full plan when we reach it)
+## Step 2 — Bootstrap AWS once, by hand (full plan)
 
-- [ ]  **Step 2 — Bootstrap AWS once, by hand.** The only Terraform ever run from the laptop: `infra/bootstrap` creates the S3 bucket for Terraform state (versioned, encrypted, lockfile) and the GitHub OIDC provider with two roles, `steakllm-ci-plan` (read-only, for pull requests) and `steakllm-ci-apply` (for `main`), each trusting only this repo. Budgets get an $80 warning and a $100 alarm. *Done when:* a workflow can assume the plan role and run `terraform plan`, and GitHub stores zero AWS keys.
-- [ ]  **Step 3 — Build the CI/CD pipeline.** `ci.yml` on every push: `terraform fmt`/`validate`, `tflint`, `checkov`, `ruff`, `pytest`, `kube-linter`, `gitleaks`, Trivy. `plan.yml` on pull requests posts the Terraform plan as a comment. `apply.yml` on merge applies behind a GitHub Environment that waits for your approval. `release.yml` builds multi-arch images tagged with the git SHA, pushes them to ECR and bumps the tag in the Helm values (the commit Argo will later deploy). *Done when:* a pull request shows green checks and a plan comment, and the first real change (the budgets) was applied by the pipeline, not by hand.
+*Goal: the pipeline gets the two things it cannot create for itself, a place to keep Terraform's state and an identity to borrow, plus the budget alarm that must exist before anything can spend. Cost of this step: pennies.*
+
+*Concept. Terraform needs somewhere to remember what it built (state), and the pipeline needs an identity, but a pipeline with no identity can't create either. So one small module, `infra/bootstrap`, is applied once from the laptop with local state; then it moves its own state into the bucket it just made. From then on the laptop never applies again. The OIDC provider is the trust between GitHub and AWS: GitHub signs a short-lived token naming the repo and branch a job runs from, and AWS lends a role to jobs that match. Two roles: `plan` may read everything and take the state lock, from any branch or pull request; `apply` may change things, from `main` or the `production` environment only. ADR-0001 records why `apply` starts broad and how it will be narrowed.*
+
+- [X]  **2.1 Preflight.** Who am I, which Terraform, what already exists.
+  `aws sts get-caller-identity` · `terraform version` · `aws iam list-open-id-connect-providers` · `aws budgets describe-budgets --account-id "$(aws sts get-caller-identity --query Account --output text)" --query 'Budgets[].BudgetName'`
+  *Reading it:* the identity is your own IAM user in the right account; Terraform is **1.10 or newer** (else `brew upgrade hashicorp/tap/terraform`); the OIDC list has no `token.actions.githubusercontent.com` entry (if it does, we import it rather than create a duplicate); the budget list shows what the prototype left behind, so the new one gets a distinct name.
+  *Done when:* all four answered and noted in field notes §1.
+- [X]  **2.2 The module.** Files in `infra/bootstrap/`: `versions.tf` (Terraform ≥ 1.10, providers pinned), `providers.tf` (region, default tags), `variables.tf`, `state-bucket.tf`, `github-oidc.tf`, `budgets.tf`, `outputs.tf`, `bootstrap.example.tfvars`. Copy the example to `terraform.tfvars` (git-ignored) and fill in `github_owner` and `budget_email`. Read each file together; every resource has a comment saying why it exists.
+  *Done when:* `terraform fmt -check -recursive infra/bootstrap` prints nothing (formatted) and `terraform.tfvars` shows as ignored in `git status`.
+- [X]  **2.3 Init, validate, plan.** From `infra/bootstrap/`:
+  `terraform init` (downloads the two providers, writes `.terraform.lock.hcl`, which we commit) · `terraform validate` · `terraform plan -out=tfplan`
+  *Reading it:* **13 to add, 0 to change, 0 to destroy**: `random_id`, the bucket and its four settings (versioning, encryption, public-access block, lifecycle), the OIDC provider, two roles, two policy attachments, one inline policy, one budget. Read the trust policies in the plan output: `aud` = `sts.amazonaws.com`, `sub` = `repo:<owner>/SteakLLM:*` for plan and the two exact subjects for apply.
+  *Done when:* the count matches and the trust policies read as intended.
+- [X]  **2.4 Apply and verify.**
+  `terraform apply tfplan` → five outputs. Then prove each piece from outside Terraform:
+  `aws s3api get-bucket-versioning --bucket "$(terraform output -raw tfstate_bucket)"` → `Enabled` · `aws iam get-role --role-name steakllm-ci-apply --query Role.AssumeRolePolicyDocument` → the two subjects · `aws budgets describe-budget --account-id <id> --budget-name steakllm-monthly --query 'Budget.BudgetLimit'` → `100 USD`.
+  *Done when:* all three checks pass and the outputs are pasted into field notes §1 (the role ARNs and bucket name are not secrets).
+- [X]  **2.5 Move the module's own state into the bucket.** Add `backend.tf` with the bucket name from the output, `key = "bootstrap/terraform.tfstate"`, `encrypt = true`, `use_lockfile = true`; then `terraform init -migrate-state` (answer `yes`) and `terraform plan`.
+  *Reading it:* the plan says **No changes**; `aws s3 ls "s3://<bucket>/bootstrap/"` lists `terraform.tfstate`; the local `terraform.tfstate` is now empty and the `.backup` is git-ignored.
+  *Done when:* state lives in S3 and the plan is clean.
+- [X]  **2.6 Tell GitHub, and prove the trust.** Role ARNs and the bucket name are configuration, not secrets, so they go in as repository *variables*:
+  `gh variable set AWS_REGION --body us-east-1` · `gh variable set TFSTATE_BUCKET --body "$(terraform output -raw tfstate_bucket)"` · `gh variable set AWS_PLAN_ROLE_ARN --body "$(terraform output -raw ci_plan_role_arn)"` · `gh variable set AWS_APPLY_ROLE_ARN --body "$(terraform output -raw ci_apply_role_arn)"`
+  Add `.github/workflows/oidc-smoke.yml` (manual trigger; requests an OIDC token, assumes the plan role, prints the identity) and run it: `gh workflow run oidc-smoke.yml && gh run watch`.
+  *Reading it:* the job's `get-caller-identity` shows `assumed-role/steakllm-ci-plan/...` and `gh secret list` prints **nothing**.
+  *Done when:* the run is green with the assumed role visible, and the repo holds zero AWS secrets.
+- [ ]  **2.7 Record it.** `docs/adr/0001-ci-identity.md` and `docs/adr/0002-terraform-state.md`; field notes §1 (bucket, role ARNs, account) and any incident; commit `infra/bootstrap/` with `.terraform.lock.hcl` through a PR.
+  *Done when:* merged to `main`; this section ticked.
+
+**Step 2 done when:** the bucket holds the bootstrap's own state; a GitHub workflow assumed the plan role with no stored key; the budget alarm exists; both ADRs are written; the laptop never needs to run `terraform apply` again.
+
+---
+
+## Steps 3–12 (architecture-level; each gets its full plan when we reach it)
+
+- [ ]  **Step 3 — Build the CI/CD pipeline.** `ci.yml` on every push: `terraform fmt`/`validate`, `tflint`, `checkov`, `ruff`, `pytest`, `kube-linter`, `gitleaks`, Trivy. `plan.yml` on pull requests posts the Terraform plan as a comment. `apply.yml` on merge applies behind a GitHub Environment that waits for your approval. `release.yml` builds multi-arch images tagged with the git SHA, pushes them to ECR and bumps the tag in the Helm values (the commit Argo will later deploy). *Done when:* a pull request shows green checks and a plan comment, and the first real change (the ECR repositories the release workflow needs) was applied by the pipeline, not by hand.
 - [ ]  **Step 4 — Write the event contracts.** `services/contracts`: a common envelope (`id`, `type`, `version`, `time`, `doc_id`, `trace_id`, `source`) and five events, `DocumentUploaded`, `DocumentIndexed`, `SummaryReady`, `DocumentDeleted`, `ChatCompleted`, as JSON schemas with a compatibility test (version 1 fields never change meaning). The idempotency rules are written down here: document ID is the sha256 of the bytes; Qdrant point ID is hash(doc_id, chunk index); every consumer must be safe to run twice. *Done when:* schemas validate, the compatibility test runs in CI, and the folder README explains the rules in plain words.
 - [ ]  **Step 5 — Build the local dev stack.** `compose/`: single-node Kafka (KRaft), MinIO standing in for S3, DynamoDB Local, Qdrant, TEI with a small CPU embedding model, Open WebUI, and Bedrock as the gateway's LLM backend (the Mac can't run vLLM), with a stub backend that plays "vLLM is down" so the health-check, fallback and circuit-breaker code is exercised locally. `make up`, `make demo` (drops a sample PDF), `make down`. *Done when:* the stack boots on the Mac and a demo file flows from MinIO to a searchable, summarized document.
 - [ ]  **Step 6 — Build the five services, locally, with tests.** The gateway (FastAPI: OpenAI `/v1` with `llm` and `docs` models, the routing policy with health checks and a circuit breaker, per-key quotas, presigned uploads, the catalog page, OpenAPI), the embedder, the summarizer, the notifier, and the ingest function (one module, Lambda handler plus local runner). Each with a multi-stage non-root Dockerfile, probes, JSON logs carrying document and trace IDs, retry and dead-letter topics, graceful shutdown, and unit plus integration tests in CI. The delete path is implemented here. First chaos drill: kill the embedder mid-batch, restart, no duplicates. *Done when:* drop a file → searchable and summarized within 60 s locally, the drill passes and is written up, and images are in ECR.

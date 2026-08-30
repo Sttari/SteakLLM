@@ -30,6 +30,15 @@ Each step in `PLAN.md` gets its full explain/show/run/checkpoint plan when we re
 - **Never widen the public surface** beyond the plan: one ALB in front of the gateway only. Never expose Grafana, Argo, Qdrant, Kafka or the Kubernetes API publicly "for a quick check".
 - **Nothing reaches the cluster except through git.** No `kubectl apply` by hand except during a drill we have named as such; Argo owns the cluster.
 
+## Working in Claude Code
+
+- **Start of every session:** read `PLAN.md`, state which Step and substep is next, then wait. Use the `/next-step` skill: it runs exactly one substep in the loop above and stops. Never work ahead of the first unticked box.
+- **A Step with only its architecture summary** gets its full plan written into `PLAN.md` first (same shape as Steps 1–2), and Thomas reads it before anything runs.
+- **Before ticking a box** whose evidence isn't already on screen, ask the `checkpoint-reviewer` subagent to verify the *Done when* with read-only commands.
+- **End of every session:** the `/end-session` skill (recap, tick, field notes, GPU at zero, PR, "meter is off").
+- **Permissions:** `.claude/settings.json` allows read-only and repo-local commands, asks before anything that creates or changes cloud or cluster state, and denies destructive commands; `.claude/hooks/guard.py` enforces the same list regardless of the conversation. If a needed command is blocked, propose it and let Thomas run it.
+- **Long sessions:** `/compact` when the conversation gets long; this file and the plan survive it. Use plan mode (Shift+Tab) for any substep that touches more than one file.
+
 ## Quick reference (grows with the steps)
 
 `pre-commit run --all-files` · `gitleaks detect --source . --verbose` · `gh pr create --fill` / `gh pr merge --squash --delete-branch` · `make help`

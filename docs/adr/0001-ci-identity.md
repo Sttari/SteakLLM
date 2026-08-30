@@ -11,8 +11,8 @@ The pipeline must read and change AWS resources: plan on every pull request, app
 
 An OIDC identity provider for `token.actions.githubusercontent.com` and two IAM roles:
 
-- `steakllm-ci-plan`: trusts any subject under `repo:<owner>/SteakLLM:*`; permissions are `ReadOnlyAccess` plus read of the state bucket and put/delete of `*.tflock` objects (plan takes the state lock).
-- `steakllm-ci-apply`: trusts only `repo:<owner>/SteakLLM:ref:refs/heads/main` and `repo:<owner>/SteakLLM:environment:production`; permissions are `AdministratorAccess` **for now**.
+- `steakllm-ci-plan`: trusts any subject under `repo:<owner>/SteakLLM:*` or its immutable form `repo:<owner>@<owner_id>/SteakLLM@<repo_id>:*` (GitHub sends the ID-bearing form for this repo; see field notes, Incident 5); permissions are `ReadOnlyAccess` plus read of the state bucket and put/delete of `*.tflock` objects (plan takes the state lock).
+- `steakllm-ci-apply`: trusts only `ref:refs/heads/main` and `environment:production` under either prefix (four exact subjects); permissions are `AdministratorAccess` **for now**.
 
 Role ARNs are stored as GitHub repository *variables*, not secrets, because they are not secret. `gh secret list` must stay empty of AWS material.
 
