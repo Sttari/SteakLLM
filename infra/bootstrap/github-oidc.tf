@@ -10,8 +10,18 @@ resource "aws_iam_openid_connect_provider" "github" {
   thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
 }
 
+# GitHub presents the subject in one of two shapes: the classic name form, or the immutable form that
+# pins numeric IDs to the names (repo:Sttari@43324946/SteakLLM@1350070618:…). This repo gets the immutable
+# form (CloudTrail, Aug 28 2026); the trust accepts both, and the ID form is the stronger one: a repo
+# deleted and re-created under the same name gets a new ID and cannot inherit the role.
 locals {
-  repo_sub_prefix = "repo:${var.github_owner}/${var.github_repo}"
+  repo_sub_prefixes = [
+    "repo:${var.github_owner}/${var.github_repo}",
+    "repo:${var.github_owner}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}",
+  ]
+  apply_subjects = flatten([
+    for p in local.repo_sub_prefixes : ["${p}:ref:refs/heads/main", "${p}:environment:production"]
+  ])
 }
 
 # ---- plan role: read everything, write nothing except the state lock ----
@@ -32,7 +42,7 @@ data "aws_iam_policy_document" "plan_trust" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["${local.repo_sub_prefix}:*"]
+      values   = [for p in local.repo_sub_prefixes : "${p}:*"]
     }
   }
 }
@@ -92,10 +102,7 @@ data "aws_iam_policy_document" "apply_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values = [
-        "${local.repo_sub_prefix}:ref:refs/heads/main",
-        "${local.repo_sub_prefix}:environment:production",
-      ]
+      values   = local.apply_subjects
     }
   }
 }

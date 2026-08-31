@@ -21,6 +21,16 @@ variable "github_repo" {
   default     = "SteakLLM"
 }
 
+variable "github_owner_id" {
+  description = "Numeric ID of the owner (gh api users/<owner> --jq .id). GitHub's immutable OIDC subject is repo:<owner>@<owner_id>/<repo>@<repo_id>:…"
+  type        = number
+}
+
+variable "github_repo_id" {
+  description = "Numeric ID of the repository (gh api repos/<owner>/<repo> --jq .id). Survives renames; names don't."
+  type        = number
+}
+
 variable "budget_email" {
   description = "Address that receives the budget alarms. Lives in terraform.tfvars, which is git-ignored."
   type        = string
