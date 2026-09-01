@@ -32,8 +32,13 @@ variable "github_repo_id" {
 }
 
 variable "budget_email" {
-  description = "Address that receives the budget alarms. Lives in terraform.tfvars, which is git-ignored."
+  description = "Address that receives the budget alarms. Lives in terraform.tfvars (git-ignored); in CI, in the TF_VAR_BUDGET_EMAIL secret."
   type        = string
+  # A missing CI secret arrives as an empty string; fail loudly instead of planning a broken alarm (Incident 8).
+  validation {
+    condition     = can(regex("^[^@]+@[^@]+$", var.budget_email))
+    error_message = "budget_email must be a plausible email address; an empty value usually means the TF_VAR_BUDGET_EMAIL secret is unset."
+  }
 }
 
 variable "monthly_budget_usd" {

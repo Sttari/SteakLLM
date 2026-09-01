@@ -1,0 +1,64 @@
+# plan.yml — "what would this PR do to AWS?"
+# Assumes the read-only plan role via OIDC and posts the Terraform diff as a sticky PR comment.
+name: plan
+
+on:
+  pull_request:
+    paths: ["infra/**"]        # only PRs that touch infrastructure
+
+permissions:
+  contents: read
+  id-token: write              # may request the OIDC token (the signed note for AWS)
+  pull-requests: write         # may post/update the plan comment
+
+concurrency:
+  group: plan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        module: [bootstrap]    # grows as infra/ gains modules (network, eks, data…)
+    env:
+      # bootstrap's four required variables. Three derive from GitHub's own context —
+      # the same owner/repo IDs from the OIDC incident; the email is PII and lives as a masked secret.
+      TF_VAR_github_owner: ${{ github.repository_owner }}
+      TF_VAR_github_owner_id: ${{ github.repository_owner_id }}
+      TF_VAR_github_repo_id: ${{ github.repository_id }}
+      TF_VAR_budget_email: ${{ secrets.TF_VAR_BUDGET_EMAIL }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.16.0"
+          terraform_wrapper: false          # raw terraform output for the comment, no wrapper noise
+
+      - name: Assume the plan role (OIDC, no stored key)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: terraform plan
+        working-directory: infra/${{ matrix.module }}
+        run: |
+          terraform init -input=false
+          # -detailed-exitcode: 0 = no changes, 2 = changes, 1 = real error
+          terraform plan -no-color -input=false > plan-raw.txt 2>&1 && ec=0 || ec=$?
+          if [ "$ec" = "1" ]; then cat plan-raw.txt; exit 1; fi
+          {
+            echo "### \`infra/${{ matrix.module }}\` — terraform plan"
+            echo '```'
+            tail -c 60000 plan-raw.txt      # GitHub comments cap at 65k chars; keep the tail (summary lives there)
+            echo '```'
+          } > plan.txt
+
+      - name: Post the plan as a sticky comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: plan-${{ matrix.module }}   # one sticky comment per module, updated in place
+          path: infra/${{ matrix.module }}/plan.txt
