@@ -241,7 +241,7 @@ flowchart LR
   *Done when:* tests pass and the README's rules section reads clearly to a non-engineer.
 - [X]  **4.6 The compatibility test.** `tests/golden/v1.json` freezes, for each schema, the required fields and each field's type. `tests/test_compat.py` asserts the live schemas still contain every golden required field with the same type — additions are fine, removals and retypes fail with a message that says "this is a breaking change: create v2". The golden file is updated only by an explicit, reviewed commit.
   *Done when:* the test passes; temporarily deleting a required field from a schema makes it fail with that message; the change is reverted.
-- [ ]  **4.7 `pytest` joins `ci.yml`.** A sixth job: `uv sync` and `uv run pytest` in every `services/*` that has a `pyproject.toml`; added to the required checks in `.github/branch-protection.json` and PUT to GitHub. From here, breaking a contract is unmergeable.
+- [X]  **4.7 `pytest` joins `ci.yml`.** A sixth job: `uv sync` and `uv run pytest` in every `services/*` that has a `pyproject.toml`; added to the required checks in `.github/branch-protection.json` and PUT to GitHub. From here, breaking a contract is unmergeable.
   *Done when:* the PR shows six green checks, and `required_status_checks` lists `pytest`.
 - [ ]  **4.8 Record it.** ADR-0004 (JSON Schema, file-versioned, additive-only; rejected: Avro + Schema Registry, Protobuf, "Pydantic models are the contract"). Field notes: close the Dependabot `uv` open item, incidents. Plain-words README in `services/contracts/`. PR.
   *Done when:* merged to `main`; this section ticked.
