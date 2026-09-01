@@ -1,4 +1,4 @@
-locals {
-  # deliberately misformatted: proves the fmt gate blocks a merge (3.3); file is deleted after the test
-badly_formatted="spacing and indentation are wrong on purpose"
+output "scratch_fmt_test" {
+  description = "Test artifact for 3.3 (required checks). Never merged; dies with the branch."
+  value       = "properly formatted and referenced"
 }
