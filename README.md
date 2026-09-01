@@ -2,7 +2,7 @@
 
 **Document intelligence on AWS.** Drop a document into a bucket and it is ingested, indexed, summarized and tagged; chat over your documents from a browser; get an alert when a new document matches something you watch. Self-hosted inference on a GPU that exists only while it's needed, with Amazon Bedrock as the bridge and the fallback. Everything is built from code, deployed by pipeline, observable, and able to fail one piece at a time without losing work.
 
-> **Status: work in progress — Step 1 of 12 (repository and pipeline foundations).** Nothing is deployed yet. The roadmap below is ticked as steps complete; the plan itself is in [`PLAN.md`](PLAN.md).
+> **Status: work in progress — Steps 1–3 of 12 done (repository, AWS bootstrap, CI/CD pipeline).** No cluster yet; the only AWS resources are the state bucket, CI roles, budget alarm and five empty ECR repositories. The roadmap below is ticked as steps complete; the plan itself is in [`PLAN.md`](PLAN.md).
 
 ## What it does
 
@@ -54,9 +54,9 @@ The complete table with the alternative rejected for each choice is in [`PLAN.md
 
 ## Roadmap
 
-- [ ]  **1.** Set up the git repo — skeleton, secret-scanning hooks, protected `main`, first PR
-- [ ]  **2.** Bootstrap AWS once by hand — Terraform state bucket, GitHub OIDC roles, budget alarms
-- [ ]  **3.** CI/CD pipeline — lint, test, scan, plan on PR, apply on merge, images to ECR
+- [X]  **1.** Set up the git repo — skeleton, secret-scanning hooks, protected `main`, first PR
+- [X]  **2.** Bootstrap AWS once by hand — Terraform state bucket, GitHub OIDC roles, budget alarms
+- [X]  **3.** CI/CD pipeline — lint, test, scan, plan on PR, apply on merge, images to ECR
 - [ ]  **4.** Event contracts — versioned schemas and the idempotency rules
 - [ ]  **5.** Local dev stack — Kafka, MinIO, DynamoDB Local, Qdrant, TEI, Open WebUI on the laptop
 - [ ]  **6.** The five services with tests — gateway, embedder, summarizer, notifier, ingest
