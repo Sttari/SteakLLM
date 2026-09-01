@@ -34,6 +34,7 @@ variable "github_repo_id" {
 variable "budget_email" {
   description = "Address that receives the budget alarms. Lives in terraform.tfvars (git-ignored); in CI, in the TF_VAR_BUDGET_EMAIL secret."
   type        = string
+  sensitive   = true # public repo: plan comments must print "(sensitive value)", never the address
   # A missing CI secret arrives as an empty string; fail loudly instead of planning a broken alarm (Incident 8).
   validation {
     condition     = can(regex("^[^@]+@[^@]+$", var.budget_email))
