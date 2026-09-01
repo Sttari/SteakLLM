@@ -94,6 +94,12 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 *Fix:* decision recorded in §2 (public now vs Pro vs no gate). Pre-flight for going public: full-history `gitleaks git` scan (13 commits, clean), `budget_email` marked `sensitive`, prose scrubbed of personal addresses.
 *Lesson:* check a feature's plan gating with a read call or a throwaway request *before* designing around it; a 422 late in a step costs a decision, not just a retry.
 
+**Incident 12 — the 1.6 skeleton was never created; box ticked on a *Done when* that was never true** (Sep 1 2026, Step 4.1)
+*Symptom:* Step 4's preflight found no `services/` at all — nor `platform/`, `charts/`, `compose/`, `Makefile`, `LICENSE`, `.env.example`, `.editorconfig`, `CONTRIBUTING.md`, PR template. The first commit held seven files; none of the skeleton.
+*Cause:* 1.6 was ticked from memory, not from `tree -L 2`. Git stores no empty directories, so even folders made by hand without a file inside vanish from history.
+*Fix:* created every item 1.6 lists (directories with one-line READMEs, root files, `Makefile` with stub targets) during 4.1; re-verified with `tree`.
+*Lesson:* second time this pattern bit (see Incident 6). Before ticking any box, run the *Done when* command and look at its output — a tick is a claim, the output is the evidence. And git will silently drop an empty folder; a README stub is what keeps a room on the map.
+
 **Open item — Dependabot's `uv in /services/*` job fails** (first seen Aug 31 2026)
 The weekly "Dependabot Updates" run errors on the `uv` ecosystem because `services/*` folders exist with no Python manifests in them yet. Expected to self-resolve in Step 6 when the services gain `pyproject.toml` + `uv.lock`; if it still fails then, diagnose properly and record the fix here.
 
