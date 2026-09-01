@@ -61,6 +61,12 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 *Fix:* set both globally to the address GitHub already uses on the squash-merges (`thomasli9702@outlook.com`), then `git commit --amend --reset-author --no-edit` on the unpushed commit.
 *Lesson:* a ticked box is a claim; the *Done when* is the evidence. Re-verify with the read command (`git config --global user.email`) rather than trusting the tick.
 
+**Incident 7 — first `ci.yml` run: gitleaks 403, checkov 6 findings** (Sep 1 2026, Step 3.2)
+*Symptom:* gitleaks job died in 10 s — `Resource not accessible by integration` (403 on `GET /pulls/8/commits`); checkov failed with 6 findings on the bootstrap module.
+*Cause:* the workflow's least-privilege `permissions:` block (`contents: read` only) revoked the `pull-requests: read` grant gitleaks-action needs on `pull_request` events. Checkov: one real gap (no abort rule for stale multipart uploads — invisible billable fragments) and five deliberate design decisions that weren't yet on the record anywhere the scanner could see.
+*Fix:* `pull-requests: read` added to `ci.yml`; `abort_incomplete_multipart_upload { days_after_initiation = 7 }` in the state bucket lifecycle; five inline `#checkov:skip=<rule>:<reason>` comments (ADR-0001/0002 referenced). Second run: all five jobs green.
+*Lesson:* a least-privilege permissions block starts by breaking the tools that need more — the 403's URL names the missing permission. A security scanner's findings split into *fixes* and *decisions*; record the decisions where the scanner reads them, so the report shows the reasoning instead of noise.
+
 ## 4. Measurements
 
 Nothing measured yet. From Step 7: rebuild time (`terraform destroy` → `apply`). From Step 9: GPU summon-to-`/health` time, idle-to-removed time, the load-test table (c=1/8/32). From Step 10: upload-to-searchable and upload-to-email latency, drill results. From Step 11: tokens per GPU-hour and $/Mtok beside Bedrock.
