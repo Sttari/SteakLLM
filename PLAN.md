@@ -243,7 +243,7 @@ flowchart LR
   *Done when:* the test passes; temporarily deleting a required field from a schema makes it fail with that message; the change is reverted.
 - [X]  **4.7 `pytest` joins `ci.yml`.** A sixth job: `uv sync` and `uv run pytest` in every `services/*` that has a `pyproject.toml`; added to the required checks in `.github/branch-protection.json` and PUT to GitHub. From here, breaking a contract is unmergeable.
   *Done when:* the PR shows six green checks, and `required_status_checks` lists `pytest`.
-- [ ]  **4.8 Record it.** ADR-0004 (JSON Schema, file-versioned, additive-only; rejected: Avro + Schema Registry, Protobuf, "Pydantic models are the contract"). Field notes: close the Dependabot `uv` open item, incidents. Plain-words README in `services/contracts/`. PR.
+- [X]  **4.8 Record it.** ADR-0004 (JSON Schema, file-versioned, additive-only; rejected: Avro + Schema Registry, Protobuf, "Pydantic models are the contract"). Field notes: close the Dependabot `uv` open item, incidents. Plain-words README in `services/contracts/`. PR.
   *Done when:* merged to `main`; this section ticked.
 
 **Step 4 done when:** five event schemas plus the envelope validate their examples; the compatibility test guards v1 in CI as a required check; `doc_id` and `point_id` exist as tested code; the folder README explains the rules in plain words; ADR-0004 is on `main`.

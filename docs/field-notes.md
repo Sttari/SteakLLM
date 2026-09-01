@@ -17,6 +17,7 @@ Running log of the environment, every incident (cause → fix → lesson), and e
 | AWS | account `066591056087`, region `us-east-1`, budget `steakllm-monthly` ($100 limit; alarms at 80 % actual, 100 % actual, 100 % forecasted) — created in Step 2 |
 | Dependabot | version updates weekly (`.github/dependabot.yml`); alerts + security updates enabled by hand Aug 28 2026 (`gh api -X PUT …/vulnerability-alerts`, `…/automated-security-fixes`) — private repos don't get them by default |
 | CI/CD (Step 3) | `ci.yml` — gitleaks · terraform fmt/validate · tflint · checkov · ruff, required on `main` (strict) · `plan.yml` — plan role via OIDC, sticky comment per module on infra PRs · `apply.yml` — `production` environment (owner approves, protected branches only), apply role, per-module queue; bootstrap excluded · `release.yml` deferred to Step 6 |
+| Contracts (Step 4) | `services/contracts` — package `steakllm-contracts` (uv, src layout, Python 3.12): envelope + 5 event schemas (JSON Schema 2020-12), examples, `ids.doc_id`/`ids.point_id`, golden-file compatibility test; 38 tests; `pytest` required in CI |
 | Pre-commit hooks | gitleaks · detect-private-key · detect-aws-credentials · large-files · yaml/json · end-of-file · trailing-whitespace · terraform_fmt · ruff · ruff-format |
 
 ## 2. Decisions
@@ -100,8 +101,8 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 *Fix:* created every item 1.6 lists (directories with one-line READMEs, root files, `Makefile` with stub targets) during 4.1; re-verified with `tree`.
 *Lesson:* second time this pattern bit (see Incident 6). Before ticking any box, run the *Done when* command and look at its output — a tick is a claim, the output is the evidence. And git will silently drop an empty folder; a README stub is what keeps a room on the map.
 
-**Open item — Dependabot's `uv in /services/*` job fails** (first seen Aug 31 2026)
-The weekly "Dependabot Updates" run errors on the `uv` ecosystem because `services/*` folders exist with no Python manifests in them yet. Expected to self-resolve in Step 6 when the services gain `pyproject.toml` + `uv.lock`; if it still fails then, diagnose properly and record the fix here.
+**Open item — Dependabot's `uv in /services/*` job fails** (first seen Aug 31 2026; expected resolved Sep 1 2026)
+The weekly "Dependabot Updates" run errored on the `uv` ecosystem because `services/*` had no Python manifests. `services/contracts` now has `pyproject.toml` + `uv.lock` (Step 4.2). *Verify on the next Monday run (Sep 7 2026); if it still fails, diagnose and record the fix here.*
 
 ## 4. Measurements
 
@@ -116,4 +117,6 @@ First pipeline apply: **2026-09-01T20:18:17Z** — `infra/ecr`, 10 resources, by
 - When STS says "not authorized", read the subject in CloudTrail before touching the policy.
 - In zsh, quote any `--query` containing `[0]`; unquoted brackets are globs.
 - Every terraform command reads the directory it stands in; a "no resources" surprise usually means wrong cwd.
+- Absolute paths in every scripted command: a shell whose working directory persists between commands will happily run `sed` on a file that isn't there.
+- Never feed markdown with backticks through an unquoted heredoc: the shell executes the backticks.
 - One bad test file tripped two independent gates (fmt's formatting, tflint's dead-code rule) — layered checks each catch their own concern.
