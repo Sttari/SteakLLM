@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "steakllm://schemas/DocumentDeleted.v1",
+  "title": "DocumentDeleted (v1)",
+  "description": "The document is gone: object, vectors and catalog row are removed (or being removed) by every consumer. Written by the gateway (user request) or ingest (quarantine rejection).",
+  "allOf": [
+    {
+      "$ref": "steakllm://schemas/envelope.v1"
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "DocumentDeleted"
+    },
+    "source": {
+      "description": "Only these services may write DocumentDeleted.",
+      "enum": [
+        "gateway",
+        "ingest"
+      ]
+    },
+    "data": {
+      "type": "object",
+      "description": "Only facts a consumer needs to act; nothing that can be looked up. Unknown fields tolerated (additive v1).",
+      "required": [
+        "reason"
+      ],
+      "properties": {
+        "reason": {
+          "type": "string",
+          "enum": [
+            "user_request",
+            "retention",
+            "quarantine_rejected",
+            "superseded"
+          ],
+          "description": "Why. Consumers act the same regardless; the reason is for the audit trail."
+        },
+        "requested_by": {
+          "type": "string",
+          "description": "Hashed API key id of the requester, when a user asked."
+        }
+      }
+    }
+  }
+}

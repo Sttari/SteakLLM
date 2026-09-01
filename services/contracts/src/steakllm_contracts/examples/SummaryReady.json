@@ -1,0 +1,21 @@
+{
+  "id": "0f6a7b8c-1d2e-4f30-9a1b-000000000003",
+  "type": "SummaryReady",
+  "version": 1,
+  "time": "2026-09-01T20:19:03Z",
+  "doc_id": "3f786850e387550fdab836ed7e6dc881de23001b1b6e9c02a6a5f4f8a5b7c9d1",
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "source": "summarizer",
+  "data": {
+    "summary": "Q3 revenue grew 12% year over year, driven by the EMEA segment; operating margin held at 18%. Guidance for Q4 is unchanged.",
+    "tags": [
+      "finance",
+      "quarterly-report",
+      "emea"
+    ],
+    "model": "Qwen2.5-7B-Instruct",
+    "backend": "bedrock",
+    "tokens_in": 6120,
+    "tokens_out": 141
+  }
+}

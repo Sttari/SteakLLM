@@ -1,0 +1,15 @@
+{
+  "id": "0f6a7b8c-1d2e-4f30-9a1b-000000000002",
+  "type": "DocumentIndexed",
+  "version": 1,
+  "time": "2026-09-01T20:18:41Z",
+  "doc_id": "3f786850e387550fdab836ed7e6dc881de23001b1b6e9c02a6a5f4f8a5b7c9d1",
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "source": "embedder",
+  "data": {
+    "collection": "documents",
+    "chunk_count": 37,
+    "embedding_model": "BAAI/bge-small-en-v1.5",
+    "embedding_dim": 384
+  }
+}
