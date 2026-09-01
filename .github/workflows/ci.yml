@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read       # checkout only; no job here talks to AWS
+  pull-requests: read  # gitleaks-action lists the PR's commits to scan exactly what the PR adds
 
 concurrency:
   group: ci-${{ github.ref }}   # a new push to the same branch cancels the old run

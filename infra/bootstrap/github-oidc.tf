@@ -117,6 +117,7 @@ resource "aws_iam_role" "ci_apply" {
 # Broad on purpose while the platform is being built (VPC, EKS, IAM roles for pods, Lambda, budgets…).
 # ADR-0001 records the plan to narrow it with IAM Access Analyzer's policy generation once the resource set is known.
 resource "aws_iam_role_policy_attachment" "ci_apply_admin" {
+  #checkov:skip=CKV_AWS_274:Broad on purpose while the platform is being built; ADR-0001 records the narrowing plan
   role       = aws_iam_role.ci_apply.name
   policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
 }
