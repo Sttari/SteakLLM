@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "steakllm://schemas/envelope.v1",
+  "title": "Event envelope (v1)",
+  "description": "The part of every SteakLLM event that is the same regardless of type. Readers validate this first, then the event-specific schema. Unknown fields are tolerated on purpose: v1 may gain optional fields, never lose or retype one.",
+  "type": "object",
+  "required": ["id", "type", "version", "time", "doc_id", "trace_id", "source", "data"],
+  "properties": {
+    "id": {
+      "description": "Unique per event (UUID). Consumers deduplicate on it: Kafka and S3 both deliver at least once.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "type": {
+      "description": "Which event this is. Facts in the past tense.",
+      "type": "string",
+      "enum": ["DocumentUploaded", "DocumentIndexed", "SummaryReady", "DocumentDeleted", "ChatCompleted"]
+    },
+    "version": {
+      "description": "Contract version of the whole event. 1 is frozen: additive changes only; a breaking change is version 2 in a new file.",
+      "type": "integer",
+      "const": 1
+    },
+    "time": {
+      "description": "When the fact became true, RFC 3339 in UTC (must end in Z). Producers set it; consumers never rewrite it.",
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$"
+    },
+    "doc_id": {
+      "description": "sha256 of the document bytes, lowercase hex. The same file always gets the same id. Null only for ChatCompleted, which is about a conversation, not a document.",
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "trace_id": {
+      "description": "W3C trace id (32 lowercase hex). Follows one user request across every service and every event it causes.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "source": {
+      "description": "The service that wrote the event.",
+      "type": "string",
+      "enum": ["ingest", "embedder", "summarizer", "notifier", "gateway"]
+    },
+    "data": {
+      "description": "The event-specific body. Shaped by the per-event schema (<Type>.v1).",
+      "type": "object"
+    }
+  },
+  "if": { "properties": { "type": { "const": "ChatCompleted" } } },
+  "then": { "properties": { "doc_id": { "type": "null" } } },
+  "else": { "properties": { "doc_id": { "type": "string" } } }
+}
