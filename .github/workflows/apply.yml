@@ -1,0 +1,62 @@
+# apply.yml — "make it so."  On merge to main touching infrastructure: pause at the production
+# gate (a human click), then plan + apply as the apply role. Bootstrap is excluded on purpose:
+# it is the one module applied from the laptop, so the apply role can never edit its own trust from CI.
+name: apply
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - "!infra/bootstrap/**"   # laptop-only module (see ADR-0003)
+  workflow_dispatch:            # re-run by hand after a fixed failure; still gated by the environment
+
+permissions:
+  contents: read
+  id-token: write               # OIDC token; inside the environment its subject is environment:production
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production     # the gate: required reviewer + protected branches only (3.5)
+    strategy:
+      matrix:
+        module: [ecr]           # grows with infra/: network, eks, data, pipeline… never bootstrap
+      max-parallel: 1
+    concurrency:
+      group: apply-${{ matrix.module }}
+      cancel-in-progress: false # never cancel an apply mid-flight; queue instead
+    env:
+      # Same inputs plan.yml provides, so "works in plan, fails in apply" can't happen.
+      TF_VAR_github_owner: ${{ github.repository_owner }}
+      TF_VAR_github_owner_id: ${{ github.repository_owner_id }}
+      TF_VAR_github_repo_id: ${{ github.repository_id }}
+      TF_VAR_budget_email: ${{ secrets.TF_VAR_BUDGET_EMAIL }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.16.0"
+          terraform_wrapper: false
+
+      - name: Assume the apply role (OIDC, subject environment:production)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: terraform plan
+        working-directory: infra/${{ matrix.module }}
+        run: |
+          terraform init -input=false
+          terraform plan -no-color -input=false -out=tfplan | tee plan.txt
+          {
+            echo "### \`infra/${{ matrix.module }}\` — plan applied by this run"
+            echo '```'; tail -c 60000 plan.txt; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"      # the record of what was approved and applied
+
+      - name: terraform apply
+        working-directory: infra/${{ matrix.module }}
+        run: terraform apply -input=false -no-color tfplan

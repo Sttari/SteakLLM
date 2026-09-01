@@ -26,6 +26,7 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 |---|---|---|
 | Aug 28 2026 | Ollama dropped from local dev; Bedrock is the only local backend, vLLM lands at Step 9 | The Mac can't run vLLM; both backends speak the same OpenAI contract, so services don't change |
 | Aug 28 2026 | Repo private until Step 12 | Preference. Branch protection turned out to work on the private repo anyway (see Incident 4) |
+| Sep 1 2026 | **Repo public from Step 3.5** (supersedes the above) | Environment protection rules (the human apply gate) are free only on public repos (Incident 11). Pre-flight: full-history gitleaks clean, `budget_email` marked sensitive, personal addresses scrubbed from prose. Alternatives rejected: GitHub Pro ($4/mo) for a feature the public path gives free; dropping the gate |
 
 ## 3. Incident log
 
@@ -58,7 +59,7 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 **Incident 6 — commits authored as `sttari@mac.home`; checkpoint 1.3 was ticked but not met** (Aug 30 2026, Step 2.7)
 *Symptom:* `git commit` printed "Your name and email address were configured automatically based on your username and hostname." The first commit on `main` carries that address too; GitHub can't link it to the account.
 *Cause:* `git config --global user.name/user.email` were never set; `gh auth login` authenticates `gh`, it does not configure `git`.
-*Fix:* set both globally to the address GitHub already uses on the squash-merges (`thomasli9702@outlook.com`), then `git commit --amend --reset-author --no-edit` on the unpushed commit.
+*Fix:* set both globally to the address GitHub already uses on the squash-merges, then `git commit --amend --reset-author --no-edit` on the unpushed commit.
 *Lesson:* a ticked box is a claim; the *Done when* is the evidence. Re-verify with the read command (`git config --global user.email`) rather than trusting the tick.
 
 **Incident 7 — first `ci.yml` run: gitleaks 403, checkov 6 findings** (Sep 1 2026, Step 3.2)
@@ -73,6 +74,27 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 *Fix:* create the secret through the GitHub CLI's interactive prompt (keeps the address out of shell history), and add a `validation` block to `budget_email` (must match `^[^@]+@[^@]+$`) so an unset secret now fails the plan loudly instead of proposing a broken alarm.
 *Lesson:* a missing secret does not error — it becomes `""`. Validate variables whose emptiness is meaningful. And this is plan-on-PR working as designed: the bad change sat in a comment for a human to read, not in AWS. (Bonus: the guard hook blocked the first draft of this very entry because the prose contained a guarded command pattern — regex guards can't tell mentions from use; fail-closed is the right default.)
 
+**Incident 9 — the recreated secret was *still* empty: an interactive prompt with no terminal** (Sep 1 2026, Step 3.4)
+*Symptom:* after Incident 8's fix, the secret existed in `gh secret list`, yet the re-run plan job showed `TF_VAR_budget_email:` empty in its environment — caught this time by the new validation, with our own error message.
+*Cause:* the CLI's interactive secret prompt was run through the session's `!` executor, which attaches no real terminal; the prompt read end-of-file from an empty stdin and stored an **empty string**. "Completed with no output" was the tell.
+*Fix:* set the value non-interactively with `--body "$(grep budget_email …/terraform.tfvars | cut -d'"' -f2)"` — pulled straight from the git-ignored tfvars, so the address never appears in the command, history, or output. Job re-run → plan green, sticky comment "No changes."
+*Lesson:* existence is not validity — verify a secret took a *value*, not just that it lists. And interactive prompts need a real TTY; in any non-interactive context, pass values explicitly from a guarded source.
+
+**Incident 10 — "Base branch was modified. Review and try the merge again."** (Sep 1 2026, Step 3.4)
+*Symptom:* `git push && gh pr merge` failed at the merge with that GraphQL error, though `main` had not moved.
+*Cause:* a race of our own making: the chained push moved the PR head a second before the merge call, which had been computed against the pre-push head. GitHub refused rather than merge a stale computation — with strict-mode required checks, the push also re-queued all six checks, blocking the merge until green.
+*Fix:* wait for the re-triggered checks, retry the merge alone. Merged clean.
+*Lesson:* never chain a push and a merge in one breath; under `strict` status checks, every push re-arms the gate. Push, let CI settle, then merge.
+
+**Incident 11 — environment protection rules refused: "billing plan doesn't support required reviewers"** (Sep 1 2026, Step 3.5)
+*Symptom:* `PUT …/environments/production` with `reviewers` + `deployment_branch_policy` → HTTP 422. The environment itself was created, with zero protection rules.
+*Cause:* on the free plan, environment *protection rules* are available only for **public** repositories (branch protection, by contrast, worked on the private repo — Incident 4). Plan limits are feature-by-feature; don't generalise from one.
+*Fix:* decision recorded in §2 (public now vs Pro vs no gate). Pre-flight for going public: full-history `gitleaks git` scan (13 commits, clean), `budget_email` marked `sensitive`, prose scrubbed of personal addresses.
+*Lesson:* check a feature's plan gating with a read call or a throwaway request *before* designing around it; a 422 late in a step costs a decision, not just a retry.
+
+**Open item — Dependabot's `uv in /services/*` job fails** (first seen Aug 31 2026)
+The weekly "Dependabot Updates" run errors on the `uv` ecosystem because `services/*` folders exist with no Python manifests in them yet. Expected to self-resolve in Step 6 when the services gain `pyproject.toml` + `uv.lock`; if it still fails then, diagnose properly and record the fix here.
+
 ## 4. Measurements
 
 Nothing measured yet. From Step 7: rebuild time (`terraform destroy` → `apply`). From Step 9: GPU summon-to-`/health` time, idle-to-removed time, the load-test table (c=1/8/32). From Step 10: upload-to-searchable and upload-to-email latency, drill results. From Step 11: tokens per GPU-hour and $/Mtok beside Bedrock.
@@ -85,3 +107,5 @@ Nothing measured yet. From Step 7: rebuild time (`terraform destroy` → `apply`
 - Strings pasted across lines carry invisible characters.
 - When STS says "not authorized", read the subject in CloudTrail before touching the policy.
 - In zsh, quote any `--query` containing `[0]`; unquoted brackets are globs.
+- Every terraform command reads the directory it stands in; a "no resources" surprise usually means wrong cwd.
+- One bad test file tripped two independent gates (fmt's formatting, tflint's dead-code rule) — layered checks each catch their own concern.
