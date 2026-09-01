@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "steakllm://schemas/DocumentUploaded.v1",
+  "title": "DocumentUploaded (v1)",
+  "description": "A document's bytes are in the quarantine prefix and its identity is known. Written by the ingest function after validate \u2192 hash \u2192 record. Starts the pipeline.",
+  "allOf": [
+    {
+      "$ref": "steakllm://schemas/envelope.v1"
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "DocumentUploaded"
+    },
+    "source": {
+      "description": "Only these services may write DocumentUploaded.",
+      "enum": [
+        "ingest"
+      ]
+    },
+    "data": {
+      "type": "object",
+      "description": "Only facts a consumer needs to act; nothing that can be looked up. Unknown fields tolerated (additive v1).",
+      "required": [
+        "bucket",
+        "key",
+        "size_bytes",
+        "content_type",
+        "sha256"
+      ],
+      "properties": {
+        "bucket": {
+          "type": "string",
+          "description": "S3 bucket holding the bytes."
+        },
+        "key": {
+          "type": "string",
+          "description": "Object key (under the quarantine prefix until indexed)."
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Object size; the upload size limit is enforced before this event exists."
+        },
+        "content_type": {
+          "type": "string",
+          "description": "MIME type as validated by ingest (e.g. application/pdf, text/markdown)."
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "sha256 of the bytes. Equals the envelope's doc_id on purpose: a consumer can verify what it fetched."
+        }
+      }
+    }
+  }
+}

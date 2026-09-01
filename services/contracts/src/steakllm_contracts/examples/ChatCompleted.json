@@ -1,0 +1,21 @@
+{
+  "id": "0f6a7b8c-1d2e-4f30-9a1b-000000000005",
+  "type": "ChatCompleted",
+  "version": 1,
+  "time": "2026-09-01T20:25:10Z",
+  "doc_id": null,
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "source": "gateway",
+  "data": {
+    "session_id": "s_7Hk2pQ",
+    "model": "docs",
+    "backend": "vllm",
+    "tokens_in": 1830,
+    "tokens_out": 212,
+    "latency_ms": 2417,
+    "api_key_id": "9c1d3e5f7a2b4c6d",
+    "retrieved_doc_ids": [
+      "3f786850e387550fdab836ed7e6dc881de23001b1b6e9c02a6a5f4f8a5b7c9d1"
+    ]
+  }
+}

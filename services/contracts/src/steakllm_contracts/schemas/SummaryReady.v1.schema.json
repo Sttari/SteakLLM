@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "steakllm://schemas/SummaryReady.v1",
+  "title": "SummaryReady (v1)",
+  "description": "A summary and tags exist for the document and are stored in the catalog. Written by the summarizer; the notifier reacts to it.",
+  "allOf": [
+    {
+      "$ref": "steakllm://schemas/envelope.v1"
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "SummaryReady"
+    },
+    "source": {
+      "description": "Only these services may write SummaryReady.",
+      "enum": [
+        "summarizer"
+      ]
+    },
+    "data": {
+      "type": "object",
+      "description": "Only facts a consumer needs to act; nothing that can be looked up. Unknown fields tolerated (additive v1).",
+      "required": [
+        "summary",
+        "tags",
+        "model",
+        "backend",
+        "tokens_in",
+        "tokens_out"
+      ],
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8000,
+          "description": "The summary text as stored in the catalog."
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "maxItems": 32,
+          "uniqueItems": true,
+          "description": "Topic tags; the notifier matches the watch-list against these."
+        },
+        "model": {
+          "type": "string",
+          "description": "Model name as the gateway reported it."
+        },
+        "backend": {
+          "type": "string",
+          "enum": [
+            "vllm",
+            "bedrock"
+          ],
+          "description": "Which LLM answered: vLLM on the GPU node, or Bedrock (warm-up bridge / fallback). Feeds the cost dashboard (Step 11)."
+        },
+        "tokens_in": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Prompt tokens."
+        },
+        "tokens_out": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Completion tokens."
+        }
+      }
+    }
+  }
+}

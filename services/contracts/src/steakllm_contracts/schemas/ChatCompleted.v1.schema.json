@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "steakllm://schemas/ChatCompleted.v1",
+  "title": "ChatCompleted (v1)",
+  "description": "One chat request finished. The usage record for cost, quotas and the dashboard. Written by the gateway. doc_id is null; retrieved documents are listed in data.",
+  "allOf": [
+    {
+      "$ref": "steakllm://schemas/envelope.v1"
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "ChatCompleted"
+    },
+    "source": {
+      "description": "Only these services may write ChatCompleted.",
+      "enum": [
+        "gateway"
+      ]
+    },
+    "data": {
+      "type": "object",
+      "description": "Only facts a consumer needs to act; nothing that can be looked up. Unknown fields tolerated (additive v1).",
+      "required": [
+        "session_id",
+        "model",
+        "backend",
+        "tokens_in",
+        "tokens_out",
+        "latency_ms",
+        "api_key_id"
+      ],
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "description": "Client-side conversation id, opaque."
+        },
+        "model": {
+          "type": "string",
+          "description": "Public model name requested (e.g. llm, docs)."
+        },
+        "backend": {
+          "type": "string",
+          "enum": [
+            "vllm",
+            "bedrock"
+          ],
+          "description": "Which LLM answered: vLLM on the GPU node, or Bedrock (warm-up bridge / fallback). Feeds the cost dashboard (Step 11)."
+        },
+        "tokens_in": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Prompt tokens."
+        },
+        "tokens_out": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Completion tokens."
+        },
+        "latency_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Wall time from request to last byte."
+        },
+        "api_key_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$",
+          "description": "Hashed identifier of the API key, never the key. Per-key quotas and logs key on it."
+        },
+        "retrieved_doc_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "uniqueItems": true,
+          "description": "Documents whose chunks were used as context (empty for plain chat)."
+        }
+      }
+    }
+  }
+}

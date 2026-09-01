@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "steakllm://schemas/DocumentIndexed.v1",
+  "title": "DocumentIndexed (v1)",
+  "description": "The document's chunks are embedded and upserted into the vector store; it is searchable. Written by the embedder.",
+  "allOf": [
+    {
+      "$ref": "steakllm://schemas/envelope.v1"
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "DocumentIndexed"
+    },
+    "source": {
+      "description": "Only these services may write DocumentIndexed.",
+      "enum": [
+        "embedder"
+      ]
+    },
+    "data": {
+      "type": "object",
+      "description": "Only facts a consumer needs to act; nothing that can be looked up. Unknown fields tolerated (additive v1).",
+      "required": [
+        "collection",
+        "chunk_count",
+        "embedding_model"
+      ],
+      "properties": {
+        "collection": {
+          "type": "string",
+          "description": "Qdrant collection the chunks live in (the public demo uses a separate one)."
+        },
+        "chunk_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many chunks were upserted. 0 is legal (empty document) and still means 'indexed'."
+        },
+        "embedding_model": {
+          "type": "string",
+          "description": "Model that produced the vectors; changing it means re-indexing."
+        },
+        "embedding_dim": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Vector size; must match the collection."
+        }
+      }
+    }
+  }
+}
