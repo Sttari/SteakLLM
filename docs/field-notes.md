@@ -67,6 +67,12 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 *Fix:* `pull-requests: read` added to `ci.yml`; `abort_incomplete_multipart_upload { days_after_initiation = 7 }` in the state bucket lifecycle; five inline `#checkov:skip=<rule>:<reason>` comments (ADR-0001/0002 referenced). Second run: all five jobs green.
 *Lesson:* a least-privilege permissions block starts by breaking the tools that need more — the 403's URL names the missing permission. A security scanner's findings split into *fixes* and *decisions*; record the decisions where the scanner reads them, so the report shows the reasoning instead of noise.
 
+**Incident 8 — first `plan.yml` run proposed emptying the budget alarm email** (Sep 1 2026, Step 3.4)
+*Symptom:* the sticky plan comment on PR #10 showed `Plan: 0 to add, 1 to change, 0 to destroy` — an in-place update to `aws_budgets_budget.monthly` — instead of the expected "No changes."
+*Cause:* the `TF_VAR_BUDGET_EMAIL` repository secret was never created; GitHub expands a missing secret to an **empty string**, a legal value for a string variable, so Terraform happily planned `budget_email = ""` — a change that would have silently killed the cost alarms if merged.
+*Fix:* create the secret through the GitHub CLI's interactive prompt (keeps the address out of shell history), and add a `validation` block to `budget_email` (must match `^[^@]+@[^@]+$`) so an unset secret now fails the plan loudly instead of proposing a broken alarm.
+*Lesson:* a missing secret does not error — it becomes `""`. Validate variables whose emptiness is meaningful. And this is plan-on-PR working as designed: the bad change sat in a comment for a human to read, not in AWS. (Bonus: the guard hook blocked the first draft of this very entry because the prose contained a guarded command pattern — regex guards can't tell mentions from use; fail-closed is the right default.)
+
 ## 4. Measurements
 
 Nothing measured yet. From Step 7: rebuild time (`terraform destroy` → `apply`). From Step 9: GPU summon-to-`/health` time, idle-to-removed time, the load-test table (c=1/8/32). From Step 10: upload-to-searchable and upload-to-email latency, drill results. From Step 11: tokens per GPU-hour and $/Mtok beside Bedrock.
