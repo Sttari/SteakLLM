@@ -1,0 +1,245 @@
+{
+  "ChatCompleted": {
+    "data_properties": {
+      "api_key_id": {
+        "pattern": "^[0-9a-f]{16}$",
+        "type": "string"
+      },
+      "backend": {
+        "enum": [
+          "vllm",
+          "bedrock"
+        ],
+        "type": "string"
+      },
+      "latency_ms": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "model": {
+        "type": "string"
+      },
+      "retrieved_doc_ids": {
+        "items": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "session_id": {
+        "type": "string"
+      },
+      "tokens_in": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "tokens_out": {
+        "minimum": 0,
+        "type": "integer"
+      }
+    },
+    "data_required": [
+      "api_key_id",
+      "backend",
+      "latency_ms",
+      "model",
+      "session_id",
+      "tokens_in",
+      "tokens_out"
+    ],
+    "source": [
+      "gateway"
+    ],
+    "type": "ChatCompleted"
+  },
+  "DocumentDeleted": {
+    "data_properties": {
+      "reason": {
+        "enum": [
+          "user_request",
+          "retention",
+          "quarantine_rejected",
+          "superseded"
+        ],
+        "type": "string"
+      },
+      "requested_by": {
+        "type": "string"
+      }
+    },
+    "data_required": [
+      "reason"
+    ],
+    "source": [
+      "gateway",
+      "ingest"
+    ],
+    "type": "DocumentDeleted"
+  },
+  "DocumentIndexed": {
+    "data_properties": {
+      "chunk_count": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "collection": {
+        "type": "string"
+      },
+      "embedding_dim": {
+        "minimum": 1,
+        "type": "integer"
+      },
+      "embedding_model": {
+        "type": "string"
+      }
+    },
+    "data_required": [
+      "chunk_count",
+      "collection",
+      "embedding_model"
+    ],
+    "source": [
+      "embedder"
+    ],
+    "type": "DocumentIndexed"
+  },
+  "DocumentUploaded": {
+    "data_properties": {
+      "bucket": {
+        "type": "string"
+      },
+      "content_type": {
+        "type": "string"
+      },
+      "key": {
+        "type": "string"
+      },
+      "sha256": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "size_bytes": {
+        "minimum": 1,
+        "type": "integer"
+      }
+    },
+    "data_required": [
+      "bucket",
+      "content_type",
+      "key",
+      "sha256",
+      "size_bytes"
+    ],
+    "source": [
+      "ingest"
+    ],
+    "type": "DocumentUploaded"
+  },
+  "SummaryReady": {
+    "data_properties": {
+      "backend": {
+        "enum": [
+          "vllm",
+          "bedrock"
+        ],
+        "type": "string"
+      },
+      "model": {
+        "type": "string"
+      },
+      "summary": {
+        "maxLength": 8000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "tags": {
+        "items": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "maxItems": 32,
+        "type": "array"
+      },
+      "tokens_in": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "tokens_out": {
+        "minimum": 0,
+        "type": "integer"
+      }
+    },
+    "data_required": [
+      "backend",
+      "model",
+      "summary",
+      "tags",
+      "tokens_in",
+      "tokens_out"
+    ],
+    "source": [
+      "summarizer"
+    ],
+    "type": "SummaryReady"
+  },
+  "envelope": {
+    "properties": {
+      "data": {
+        "type": "object"
+      },
+      "doc_id": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "id": {
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+        "type": "string"
+      },
+      "source": {
+        "enum": [
+          "ingest",
+          "embedder",
+          "summarizer",
+          "notifier",
+          "gateway"
+        ],
+        "type": "string"
+      },
+      "time": {
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$",
+        "type": "string"
+      },
+      "trace_id": {
+        "pattern": "^[0-9a-f]{32}$",
+        "type": "string"
+      },
+      "type": {
+        "enum": [
+          "DocumentUploaded",
+          "DocumentIndexed",
+          "SummaryReady",
+          "DocumentDeleted",
+          "ChatCompleted"
+        ],
+        "type": "string"
+      },
+      "version": {
+        "const": 1,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "data",
+      "doc_id",
+      "id",
+      "source",
+      "time",
+      "trace_id",
+      "type",
+      "version"
+    ]
+  }
+}
