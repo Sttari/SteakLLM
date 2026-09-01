@@ -18,3 +18,4 @@ Date: YYYY-MM-DD
 |---|---|
 | [0001](0001-ci-identity.md) | CI identity: GitHub OIDC with a read-only plan role and a broad apply role, no stored keys |
 | [0002](0002-terraform-state.md) | Terraform state in S3 with native locking, bootstrapped by hand once |
+| [0003](0003-apply-behind-approval.md) | Infrastructure applies from CI behind a human-approved environment; bootstrap stays laptop-only; repo public |

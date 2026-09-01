@@ -16,6 +16,7 @@ Running log of the environment, every incident (cause → fix → lesson), and e
 | Tools (from 1.2, verified Aug 28 2026) | `gh` 2.98.0 · `aws` 2.36.8 · `terraform` 1.16.0 · `kubectl` 1.37.0 · `helm` 4.2.4 · `uv` 0.12.7 · `pre-commit` 4.6.2 · `gitleaks` 8.30.1 (hook pinned v8.30.0) · `tflint` 0.64.0 · `docker` 29.7.2 |
 | AWS | account `066591056087`, region `us-east-1`, budget `steakllm-monthly` ($100 limit; alarms at 80 % actual, 100 % actual, 100 % forecasted) — created in Step 2 |
 | Dependabot | version updates weekly (`.github/dependabot.yml`); alerts + security updates enabled by hand Aug 28 2026 (`gh api -X PUT …/vulnerability-alerts`, `…/automated-security-fixes`) — private repos don't get them by default |
+| CI/CD (Step 3) | `ci.yml` — gitleaks · terraform fmt/validate · tflint · checkov · ruff, required on `main` (strict) · `plan.yml` — plan role via OIDC, sticky comment per module on infra PRs · `apply.yml` — `production` environment (owner approves, protected branches only), apply role, per-module queue; bootstrap excluded · `release.yml` deferred to Step 6 |
 | Pre-commit hooks | gitleaks · detect-private-key · detect-aws-credentials · large-files · yaml/json · end-of-file · trailing-whitespace · terraform_fmt · ruff · ruff-format |
 
 ## 2. Decisions
@@ -26,6 +27,7 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 |---|---|---|
 | Aug 28 2026 | Ollama dropped from local dev; Bedrock is the only local backend, vLLM lands at Step 9 | The Mac can't run vLLM; both backends speak the same OpenAI contract, so services don't change |
 | Aug 28 2026 | Repo private until Step 12 | Preference. Branch protection turned out to work on the private repo anyway (see Incident 4) |
+| Sep 1 2026 | `release.yml` deferred from Step 3 to Step 6 | A build workflow with nothing to build proves nothing; it lands with the services and Dockerfiles it builds (ADR-0003) |
 | Sep 1 2026 | **Repo public from Step 3.5** (supersedes the above) | Environment protection rules (the human apply gate) are free only on public repos (Incident 11). Pre-flight: full-history gitleaks clean, `budget_email` marked sensitive, personal addresses scrubbed from prose. Alternatives rejected: GitHub Pro ($4/mo) for a feature the public path gives free; dropping the gate |
 
 ## 3. Incident log
@@ -97,7 +99,7 @@ The weekly "Dependabot Updates" run errors on the `uv` ecosystem because `servic
 
 ## 4. Measurements
 
-Nothing measured yet. From Step 7: rebuild time (`terraform destroy` → `apply`). From Step 9: GPU summon-to-`/health` time, idle-to-removed time, the load-test table (c=1/8/32). From Step 10: upload-to-searchable and upload-to-email latency, drill results. From Step 11: tokens per GPU-hour and $/Mtok beside Bedrock.
+First pipeline apply: **2026-09-01T20:18:17Z** — `infra/ecr`, 10 resources, by `assumed-role/steakllm-ci-apply` (CloudTrail), ~5 s of apply after the approval click; run 33554383123. From Step 7: rebuild time (`terraform destroy` → `apply`). From Step 9: GPU summon-to-`/health` time, idle-to-removed time, the load-test table (c=1/8/32). From Step 10: upload-to-searchable and upload-to-email latency, drill results. From Step 11: tokens per GPU-hour and $/Mtok beside Bedrock.
 
 ## 5. Lessons (running list)
 
