@@ -1,0 +1,80 @@
+# ci.yml — "is this commit healthy?"  Five parallel jobs, one concern each.
+# Job names are load-bearing: branch protection (3.3) requires them by name.
+name: ci
+
+on:
+  push:
+    branches: [main]   # pushes to main (i.e. merges)
+  pull_request:        # every PR, any branch
+
+permissions:
+  contents: read       # checkout only; no job here talks to AWS
+  pull-requests: read  # gitleaks-action lists the PR's commits to scan exactly what the PR adds
+
+concurrency:
+  group: ci-${{ github.ref }}   # a new push to the same branch cancels the old run
+  cancel-in-progress: true
+
+jobs:
+  # Full-history secret scan. The laptop hook checks staged files; this checks everything,
+  # including commits pushed from a machine with no hooks installed.
+  gitleaks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0                    # full history, not just the tip
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # auto-minted per run; not a stored secret
+
+  # Formatting and internal consistency of every Terraform module.
+  # -backend=false: validate without touching S3 state, so no AWS credentials needed.
+  terraform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.16.0"       # match the laptop; Dependabot bumps it
+      - run: terraform fmt -check -recursive infra
+      - name: validate each module
+        run: |
+          for dir in infra/*/; do
+            echo "== $dir"
+            terraform -chdir="$dir" init -backend=false -input=false > /dev/null
+            terraform -chdir="$dir" validate -no-color
+          done
+
+  # Rules the compiler doesn't have: deprecated syntax, impossible instance types…
+  tflint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: terraform-linters/setup-tflint@v4
+      - run: tflint --recursive --format compact
+
+  # Static security scan of the Terraform: public buckets, open security groups,
+  # missing encryption — caught as text, before anything exists.
+  checkov:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: infra
+          framework: terraform
+          quiet: true                       # report failures only
+
+  # Python lint + format check (today: the guard hook; later: the five services).
+  ruff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/ruff-action@v3      # runs `ruff check .`
+      - run: ruff format --check .
