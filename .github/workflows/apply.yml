@@ -9,6 +9,7 @@ on:
     paths:
       - "infra/**"
       - "!infra/bootstrap/**"   # laptop-only module (see ADR-0003)
+      - "!infra/**/*.md"        # docs never summon the builder
   workflow_dispatch:            # re-run by hand after a fixed failure; still gated by the environment
 
 permissions:
