@@ -115,6 +115,15 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 *Fix:* `user: root` on the service (a laptop stand-in; documented in the compose file), and a healthcheck that makes a real `ListTables` call and expects `TableNames` within 2 s. Re-ran the init: `catalog` ACTIVE.
 *Lesson:* a healthcheck must exercise the thing you depend on, not the port in front of it. And read the container's own log before the client's error — the cause was on line 10 of `docker compose logs`. Also: the five storage images total 2.1 GB, not the ~600 MB estimated (DynamoDB Local 809 MB, aws-cli 668 MB).
 
+**Incident 15 — the stub answered 503 to the Mac but its own healthcheck said "connection refused"** (Sep 2 2026, Step 5.5)
+*Symptom:* `curl -i localhost:8081/health` from the Mac → `503` as designed; Compose marked `vllm-stub` *unhealthy*.
+*Cause:* inside the container `localhost` resolves to `::1` (IPv6) and nginx listens on IPv4 only, so the healthcheck's `wget` could not connect. The Mac's request arrives through Docker's published port on IPv4 and never sees the difference.
+*Fix:* healthcheck targets `127.0.0.1` explicitly. Verified in-container (exit 0) before recreating.
+*Lesson:* an address must be right for where the *caller* lives — the same rule as Kafka's advertised listeners. In healthchecks, write `127.0.0.1`, never `localhost`.
+
+**Open item — Ollama image is 6.98 GB** (Sep 2 2026, Step 5.5)
+`ollama/ollama:0.33.2` bundles GPU runtimes we never use on CPU. Fine on the laptop; on the Graviton node (Step 8) a 7 GB pull costs minutes and root-volume space. The `/v1/embeddings` contract makes the server swappable: candidate replacement is a self-built ~400 MB ONNX container serving `BAAI/bge-small-en-v1.5` (arm64 + amd64). Decide at Step 8; record in ADR-0005 as a known trade-off.
+
 **Open item — Dependabot's `uv in /services/*` job fails** (first seen Aug 31 2026; expected resolved Sep 1 2026)
 The weekly "Dependabot Updates" run errored on the `uv` ecosystem because `services/*` had no Python manifests. `services/contracts` now has `pyproject.toml` + `uv.lock` (Step 4.2). *Verify on the next Monday run (Sep 7 2026); if it still fails, diagnose and record the fix here.*
 
