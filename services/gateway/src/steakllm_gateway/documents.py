@@ -70,20 +70,28 @@ def delete_document(
 STAGES = ("uploaded", "indexed", "summarized")
 
 
+def stages_of(row: dict[str, Any]) -> dict[str, bool]:
+    """Workers run in parallel, so each stage is a fact of its own, not a rung on one ladder."""
+    return {
+        "uploaded": True,
+        "indexed": bool(row.get("indexed_at") or row.get("chunk_count") is not None),
+        "summarized": bool(row.get("summarized_at") or row.get("summary")),
+    }
+
+
 def catalog_html(rows: list[dict[str, Any]]) -> str:
-    def stage_cells(status: str) -> str:
-        reached = STAGES.index(status) if status in STAGES else -1
+    def stage_cells(row: dict[str, Any]) -> str:
+        done = stages_of(row)
         return "".join(
-            f'<td class="{"on" if i <= reached else "off"}">'
-            f"{'✓ ' if i <= reached else '· '}{st}</td>"
-            for i, st in enumerate(STAGES)
+            f'<td class="{"on" if done[st] else "off"}">{"✓ " if done[st] else "· "}{st}</td>'
+            for st in STAGES
         )
 
     body = "".join(
         "<tr>"
         f"<td><code>{html.escape(str(r.get('doc_id', ''))[:12])}…</code></td>"
         f"<td>{html.escape(str(r.get('key', '')))}</td>"
-        f"{stage_cells(str(r.get('status', '')))}"
+        f"{stage_cells(r)}"
         f"<td>{html.escape(str(r.get('summary', '')))}</td>"
         f"<td>{html.escape(', '.join(r.get('tags', []) or []))}</td>"
         "</tr>"

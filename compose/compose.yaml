@@ -244,6 +244,10 @@ services:
       EMBEDDINGS_URL: http://ollama:11434/v1
       VLLM_URL: http://vllm-stub:8081
       GATEWAY_URL: http://gateway:8000/v1
+      # CI: the runner's OIDC credentials are passed through (there is no ~/.aws on a runner)
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
     volumes: &aws_creds
       # AWS_PROFILE from the env file needs the profile to exist inside the container. Locally one
       # read-only profile serves all five; in the cluster each pod wears its own IAM role instead.

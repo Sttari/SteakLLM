@@ -106,30 +106,29 @@ def _index(event: dict[str, Any], deps: Deps) -> None:
                 for i, v in enumerate(vectors)
             ],
         )
+    # The facts of indexing are always recorded (the summarizer may have finished first: workers
+    # run in parallel — Incident 23). Only the status *word* is conditional: never regress
+    # `summarized` to `indexed` (Incident 18).
+    now = deps.now()
+    deps.table.update_item(
+        Key={"doc_id": doc},
+        UpdateExpression=(
+            "SET chunk_count = :n, embedding_model = :m, indexed_at = :now, updated_at = :now"
+        ),
+        ExpressionAttributeValues={":n": len(pieces), ":m": s.embedding_model, ":now": now},
+    )
     try:
         deps.table.update_item(
             Key={"doc_id": doc},
-            # uploaded → indexed; never regress a summarized document (at-least-once delivery)
-            UpdateExpression=(
-                "SET #s = :indexed, chunk_count = :n, embedding_model = :m, "
-                "indexed_at = :now, updated_at = :now"
-            ),
+            UpdateExpression="SET #s = :indexed",
             ConditionExpression="attribute_not_exists(#s) OR #s IN (:uploaded, :indexed)",
             ExpressionAttributeNames={"#s": "status"},
-            ExpressionAttributeValues={
-                ":indexed": "indexed",
-                ":uploaded": "uploaded",
-                ":n": len(pieces),
-                ":m": s.embedding_model,
-                ":now": deps.now(),
-            },
+            ExpressionAttributeValues={":indexed": "indexed", ":uploaded": "uploaded"},
         )
     except ClientError as e:
         if e.response["Error"]["Code"] != "ConditionalCheckFailedException":
             raise
-        # A re-delivered event for a document already past `indexed`: the points were refreshed
-        # (same ids), the row stays as it is. Success, not failure (Incident 18).
-        log.info("already past indexed; row untouched", chunk_count=len(pieces))
+        log.info("status already past indexed; facts recorded, word kept", chunk_count=len(pieces))
     ev = {
         "id": str(uuid.uuid4()),
         "type": "DocumentIndexed",

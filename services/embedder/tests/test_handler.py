@@ -37,14 +37,15 @@ class FakeTable:
 
     def update_item(self, **kw):  # boto3's keyword names, taken as a dict
         row = self.rows.setdefault(kw["Key"]["doc_id"], {})
+        v = kw["ExpressionAttributeValues"]
+        if ":n" in v:  # the facts write
+            row.update(chunk_count=v[":n"], embedding_model=v[":m"], indexed_at=v[":now"])
+            return
         if kw.get("ConditionExpression") and row.get("status") not in (None, "uploaded", "indexed"):
             from botocore.exceptions import ClientError
 
             raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "UpdateItem")
-        v = kw["ExpressionAttributeValues"]
-        row.update(
-            status="indexed", chunk_count=v[":n"], embedding_model=v[":m"], indexed_at=v[":now"]
-        )
+        row["status"] = "indexed"
 
 
 @dataclass
@@ -212,6 +213,7 @@ def test_a_redelivery_for_a_summarized_document_is_a_successful_no_op(deps):
     ev = uploaded(deps)
     deps.table.rows[ev["doc_id"]] = {"status": "summarized", "summary": "kept"}
     handle(ev, {}, deps)  # must not raise: a retry storm for a finished document is a bug
-    assert deps.table.rows[ev["doc_id"]]["status"] == "summarized"  # row untouched
+    assert deps.table.rows[ev["doc_id"]]["status"] == "summarized"  # the word is kept …
+    assert deps.table.rows[ev["doc_id"]]["chunk_count"] == 5  # … but the facts are recorded
     assert len(deps.qdrant.points) == 5  # points refreshed with the same ids
     assert deps.producer.sent[0]["event"]["type"] == "DocumentIndexed"

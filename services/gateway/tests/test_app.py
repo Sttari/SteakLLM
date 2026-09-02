@@ -103,7 +103,14 @@ def client(monkeypatch):
         producer=FakeProducer(),
         s3=FakeS3(),
         table=FakeTable(
-            {"d" * 64: {"doc_id": "d" * 64, "key": "quarantine/d.pdf", "status": "indexed"}}
+            {
+                "d" * 64: {
+                    "doc_id": "d" * 64,
+                    "key": "quarantine/d.pdf",
+                    "status": "indexed",
+                    "chunk_count": 3,  # the fact the stage is derived from
+                }
+            }
         ),
         retriever=FakeRetriever(),
         ledger=QuotaLedger(clock=clock),
@@ -208,6 +215,13 @@ def test_upload_is_presigned_and_validated(client):
     assert client.post("/v1/uploads", headers=AUTH, json=bad_type).status_code == 415
     too_big = {"filename": "x.pdf", "content_type": "application/pdf", "size_bytes": 10**9}
     assert client.post("/v1/uploads", headers=AUTH, json=too_big).status_code == 413
+
+
+def test_document_status_is_readable_by_doc_id(client):
+    r = client.get(f"/v1/documents/{'d' * 64}", headers=AUTH)
+    assert r.status_code == 200 and r.json()["status"] == "indexed"
+    assert r.json()["uploaded"] and r.json()["indexed"] and not r.json()["summarized"]
+    assert client.get(f"/v1/documents/{'e' * 64}", headers=AUTH).status_code == 404
 
 
 def test_delete_removes_and_announces_then_404s(client):

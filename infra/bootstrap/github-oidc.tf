@@ -76,6 +76,13 @@ data "aws_iam_policy_document" "plan_state" {
     actions   = ["s3:PutObject", "s3:DeleteObject"]
     resources = ["${aws_s3_bucket.tfstate.arn}/*.tflock"]
   }
+  # The end-to-end test in CI runs the real gateway and summarizer, which call Bedrock. One model,
+  # invoke only, no management; pennies per run (Step 6.10).
+  statement {
+    sid       = "InvokeTheOneModel"
+    actions   = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
+    resources = ["arn:aws:bedrock:${var.region}::foundation-model/${var.bedrock_model_id}"]
+  }
 }
 
 resource "aws_iam_role_policy" "ci_plan_state" {

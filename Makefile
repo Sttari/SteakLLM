@@ -1,4 +1,4 @@
-.PHONY: help lint test build up down nuke ps logs demo
+.PHONY: help lint test build up down nuke ps logs demo e2e
 
 # One .env at the repo root serves Compose and the services alike (see .env.example).
 COMPOSE := docker compose --env-file .env --profile services -f compose/compose.yaml
@@ -44,6 +44,9 @@ ps: ## show the stack's services and health
 
 logs: ## follow the stack's logs (SERVICE=name for one service)
 	$(COMPOSE) logs -f $(SERVICE)
+
+e2e: ## the end-to-end test against the running stack: upload → summarized → docs answer, under 60 s
+	uv run --with pytest --with httpx tests/e2e/test_pipeline.py
 
 demo: ## drive the sample PDF through the stack by hand: MinIO → Kafka → Ollama → Qdrant → Bedrock → catalog
 	uv run compose/demo.py

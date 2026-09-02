@@ -23,7 +23,7 @@ from steakllm_common.settings import Settings
 from steakllm_contracts.validate import validate
 
 from .backends import ChatRequest
-from .documents import catalog_html, delete_document, presign_upload
+from .documents import catalog_html, delete_document, presign_upload, stages_of
 from .quotas import KeyPolicy, QuotaLedger
 from .rag import Retriever, build_messages, last_user_question
 from .router import Router
@@ -244,6 +244,26 @@ def create_app(deps: Deps) -> FastAPI:
             raise HTTPException(413, {"error": {"message": str(e)}}) from e
         log.info("upload presigned", key=out["key"], api_key_id=kid)
         return out
+
+    @app.get(
+        "/v1/documents/{doc_id}",
+        summary="A document's status (doc_id = sha256 of the bytes)",
+        tags=["documents"],
+    )
+    def document(doc_id: str, _: str = Depends(auth)) -> dict[str, Any]:
+        row = deps.table.get_item(Key={"doc_id": doc_id}).get("Item") if deps.table else None
+        if not row:
+            raise HTTPException(404, {"error": {"message": "unknown document"}})
+        return {
+            "doc_id": doc_id,
+            "status": row.get("status"),
+            **stages_of(row),
+            "key": row.get("key"),
+            "chunk_count": int(row["chunk_count"]) if "chunk_count" in row else None,
+            "summary": row.get("summary"),
+            "tags": list(row.get("tags", []) or []),
+            "updated_at": row.get("updated_at"),
+        }
 
     @app.delete(
         "/v1/documents/{doc_id}",

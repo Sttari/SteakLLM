@@ -187,6 +187,7 @@ def test_catalog_page_shows_the_three_stages():
                 "doc_id": "a" * 64,
                 "key": "quarantine/a.pdf",
                 "status": "summarized",
+                "chunk_count": 5,
                 "summary": "S",
                 "tags": ["x"],
             },
