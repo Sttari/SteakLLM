@@ -226,3 +226,25 @@ First pipeline apply: **2026-09-01T20:18:17Z** — `infra/ecr`, 10 resources, by
 - Measure the stop, not the signal handler: grace period ≥ one unit of work, and commit only what you handled.
 - Idempotent consumers make duplicates safe, not free; stop the duplicate at the producer when it can tell.
 - zsh does not word-split a variable holding a command (`$C build …` fails "no such file"); use a shell function. Likewise `${PIPESTATUS[0]}` is bash; zsh spells it `$pipestatus[1]` — write the command's output to a file and read `$?` instead.
+
+
+## 6. Small stumbles (tooling and habits — not incidents, still time)
+
+Everything that went sideways for a minute or more, whether or not it earned an incident. Cause → fix, oldest first. The point of this list: the second time costs zero.
+
+**Step 6, Sep 1–2 2026**
+
+- `zsh` does not word-split a variable holding a command: `C="docker compose …"; $C build` fails with *no such file or directory: docker compose …*. → A shell function (`c() { docker compose … "$@"; }`) or `eval`. Hit twice this step; the second time it made a "rebuilt + recreated" line a lie (see below).
+- The guard hook blocks any command line that pairs a file-printing command (`cat`, `less`, `more`, `head`, `tail`, `bat`) with the string `.env` — including `head -40` after a `docker compose --env-file … logs` pipe, prose in a heredoc that mentions both, and this very section when it was first written through the shell. → Use `sed -n '1,40p'` instead of `head`, `docker logs <container>` instead of `docker compose … logs`, and write prose through the editor, not a heredoc. The hook is right to be dumb; the workaround is cheap.
+- `ruff` E501 in docstrings and comments, repeatedly, because `ruff format` re-wraps code but never prose. → Measure before committing: `awk 'length > 100 {print FILENAME": "FNR}' file.py`. Also: a comment that fit before `ruff format` nested its statement one level deeper (`old = (` … `)`) no longer fits.
+- `ruff` B006 (mutable default `_n=[0]` as a closure counter in a test). → A list in the enclosing scope.
+- The pre-commit `ruff-format` hook reformats a file *during* `git commit`, the commit fails, the working tree now differs from the index. → `git add` the reformatted file and commit again with the same message. Happens whenever a file was written by a script rather than through the editor.
+- An unquoted heredoc (`<<EOF`) executes backticks inside markdown. → Always `<<'EOF'` for prose.
+- `kafka-python`'s `KafkaAdminClient` has no `list_consumer_group_offsets`. → `KafkaConsumer(group_id=…).committed(tp)` per partition.
+- `uv run --directory` changes the working directory, so relative paths in the script break. → `uv run --project <dir>` keeps the cwd.
+- `A && B >/dev/null 2>&1 && echo done` prints "done" only if both ran — but when *A itself* is the thing zsh could not find, the chain stops before the echo and the *previous* line's "healthy" count made the step look done. → Never hide the output of the step you are about to trust; print the container's `Created` time or image id after a recreate.
+- `docker logs --since 2026-09-01T19:18:30Z` returned nothing: the session crossed midnight and the containers' clock is UTC, so "19:18" was on Sep 2. → Read one timestamp from the log first, then filter; or filter by content, not time.
+- `${PIPESTATUS[0]}` is bash; zsh spells it `$pipestatus[1]`, so the "exit:" line came out empty. → Write the command's output to a file, read `$?`, then grep the file.
+- `boto3` on the laptop resolved the AWS profile from the local env file (`AWS_PROFILE=default`) and sent real-account keys to MinIO (*InvalidAccessKeyId*). → Inside containers the compose env carries MinIO's keys; on the laptop use `docker exec minio mc …`, or read the evidence from a service's log instead of listing the bucket.
+- Trivy's config scan on the laptop walked every `.venv` and reported boto3's JSON as CloudFormation — noise, not findings. → `--skip-dirs '**/.venv'` locally; CI has no venvs.
+- The drill printed "STOPED": `f"{SIGNAL.upper()}ED"`. → A small mapping. Cosmetic, but a report copies it.
