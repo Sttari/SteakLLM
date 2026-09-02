@@ -206,6 +206,8 @@ Services in Compose (6.9, Sep 2 2026): five images built in 17 s (multi-stage, n
 
 Chaos drill 1 (6.11, Sep 2 2026): 10 documents, embedder killed with 1 indexed; SIGKILL → 10/10 in **44 s** after restart (10 s session timeout + ~3.75 s per document through Ollama); SIGTERM → stop in **3.6 s** (one record), 10/10 in 34 s with no wait. Before the fix: ~43–45 s of waiting after either signal. Qdrant 50/50 points, offsets at end, 0 parked, every run.
 
+Image scans (6.12, Sep 2 2026, Trivy 0.74.0): `steakllm/gateway:local` — **0 fixable CRITICALs** (the release gate), 5 CRITICALs with no fix in Debian 12.15's base (`libsqlite3-0`, `perl-base` ×3, `zlib1g`; listed, not fatal, `ignore-unfixed`); config scan of the five Dockerfiles: **0 misconfigurations** at HIGH/CRITICAL. Bootstrap plan for the release role: 2 to add, 0 to change; checkov 77 passed / 0 failed.
+
 First pipeline apply: **2026-09-01T20:18:17Z** — `infra/ecr`, 10 resources, by `assumed-role/steakllm-ci-apply` (CloudTrail), ~5 s of apply after the approval click; run 33554383123. From Step 7: rebuild time (`terraform destroy` → `apply`). From Step 9: GPU summon-to-`/health` time, idle-to-removed time, the load-test table (c=1/8/32). From Step 10: upload-to-searchable and upload-to-email latency, drill results. From Step 11: tokens per GPU-hour and $/Mtok beside Bedrock.
 
 ## 5. Lessons (running list)
@@ -223,4 +225,4 @@ First pipeline apply: **2026-09-01T20:18:17Z** — `infra/ecr`, 10 resources, by
 - One bad test file tripped two independent gates (fmt's formatting, tflint's dead-code rule) — layered checks each catch their own concern.
 - Measure the stop, not the signal handler: grace period ≥ one unit of work, and commit only what you handled.
 - Idempotent consumers make duplicates safe, not free; stop the duplicate at the producer when it can tell.
-- zsh does not word-split a variable holding a command (`$C build …` fails "no such file"); use a shell function.
+- zsh does not word-split a variable holding a command (`$C build …` fails "no such file"); use a shell function. Likewise `${PIPESTATUS[0]}` is bash; zsh spells it `$pipestatus[1]` — write the command's output to a file and read `$?` instead.

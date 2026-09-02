@@ -30,6 +30,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # auto-minted per run; not a stored secret
 
+  # Dockerfile and Compose misconfigurations (a root user, a missing HEALTHCHECK, a floating base tag…):
+  # Trivy's config scanner, the same tool release.yml points at the built images.
+  trivy-config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          scan-ref: services
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
   # Formatting and internal consistency of every Terraform module.
   # -backend=false: validate without touching S3 state, so no AWS credentials needed.
   terraform:

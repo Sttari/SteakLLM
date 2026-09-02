@@ -27,3 +27,7 @@ Role ARNs are stored as GitHub repository *variables*, not secrets, because they
 - Nothing in GitHub can spend AWS money except a job on `main` or in the `production` environment, which requires a human approval click (Step 3).
 - The apply role is broader than it should be. **Revisit in Step 12:** use IAM Access Analyzer's policy generation from CloudTrail activity to replace `AdministratorAccess` with a generated least-privilege policy, and add a permissions boundary. Until then, branch protection and the environment gate are the controls.
 - The trust policy names the repository; renaming the repo or moving it to an organisation means updating `github_owner`/`github_repo` and re-applying `infra/bootstrap` from the laptop.
+
+## Amendment (Sep 2 2026, Step 6.12) — a third role, narrower than apply
+
+`release.yml` pushes the five service images to ECR on every merge to `main` that touches `services/`. It gets its own role, `steakllm-ci-release`: trusted for `ref:refs/heads/main` only (no pull request, no environment), allowed `ecr:GetAuthorizationToken` plus push-and-read on `steakllm/*` repositories, nothing else. Reusing the apply role was rejected because a job that only ships images would then hold `AdministratorAccess` on every merge, without the environment gate; reusing the plan role was rejected because read-only cannot push. The same "one job, one role, the least it needs" rule will apply to Step 12's narrowing of apply.

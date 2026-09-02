@@ -1,0 +1,108 @@
+# release.yml — "ship what merged."  On a push to main that touches services/: build each service
+# image for arm64 (the Graviton node) and amd64 (runners, colleagues), scan it, push it to ECR as the
+# release role, which may push to steakllm/* and do nothing else (ADR-0001 amendment). Tags are
+# immutable (sha-<7>): what was scanned is what deploys, and a re-run of the same commit finds the tag
+# already there and skips — a release is idempotent like everything else here. The Helm-values bump
+# that makes the cluster pick a tag up waits for Step 8's charts.
+name: release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/**"
+      - ".github/workflows/release.yml"
+  workflow_dispatch:            # re-run by hand; same-SHA re-runs are no-ops thanks to the tag check
+
+permissions:
+  contents: read
+  id-token: write               # OIDC subject repo:…:ref:refs/heads/main — exactly what the release role trusts
+
+concurrency:
+  group: release-${{ github.sha }}
+  cancel-in-progress: false     # never cancel a push mid-flight
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false          # one bad image must not hide the other four
+      matrix:
+        service: [gateway, ingest, embedder, summarizer, notifier]
+    env:
+      REPO: steakllm/${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Assume the release role (OIDC, subject ref:refs/heads/main)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_RELEASE_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Log in to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Already released?  (tags are immutable; look before pushing)
+        id: check
+        run: |
+          tag="sha-${GITHUB_SHA::7}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if aws ecr describe-images --repository-name "$REPO" --image-ids imageTag="$tag" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::$REPO:$tag is already in ECR; nothing to do"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/setup-qemu-action@v3         # arm64 layers are built under emulation on an amd64 runner
+        if: steps.check.outputs.exists == 'false'
+      - uses: docker/setup-buildx-action@v3
+        if: steps.check.outputs.exists == 'false'
+
+      - name: Build amd64 into the local daemon, for the scan
+        if: steps.check.outputs.exists == 'false'
+        uses: docker/build-push-action@v6
+        with:
+          context: services
+          file: services/${{ matrix.service }}/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: scan/${{ matrix.service }}:${{ steps.check.outputs.tag }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+      - name: Trivy — image scan, fail on a fixable CRITICAL
+        if: steps.check.outputs.exists == 'false'
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: scan/${{ matrix.service }}:${{ steps.check.outputs.tag }}
+          severity: CRITICAL
+          ignore-unfixed: true  # a CRITICAL with no fix available blocks nothing and teaches nothing; it is listed, not fatal
+          exit-code: "1"
+
+      - name: Build arm64 + amd64 and push
+        if: steps.check.outputs.exists == 'false'
+        uses: docker/build-push-action@v6
+        with:
+          context: services
+          file: services/${{ matrix.service }}/Dockerfile
+          platforms: linux/arm64,linux/amd64
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/${{ env.REPO }}:${{ steps.check.outputs.tag }}
+          cache-from: type=gha,scope=${{ matrix.service }}   # the amd64 half was just built; only arm64 is new work
+          provenance: false     # otherwise ECR lists an attestation manifest as an "unknown/unknown" image beside ours
+
+      - name: Record
+        run: |
+          {
+            echo "### \`$REPO:${{ steps.check.outputs.tag }}\`"
+            if [ "${{ steps.check.outputs.exists }}" = "true" ]; then echo "already in ECR — skipped"; else
+              echo "pushed: arm64 + amd64, Trivy clean of fixable CRITICALs"
+              aws ecr describe-images --repository-name "$REPO" --image-ids imageTag="${{ steps.check.outputs.tag }}" \
+                --query 'imageDetails[0].[imagePushedAt,imageSizeInBytes,imageScanStatus.status]' --output text \
+                | sed 's/^/pushed-at · bytes · scan-on-push: /'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

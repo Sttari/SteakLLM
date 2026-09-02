@@ -128,3 +128,68 @@ resource "aws_iam_role_policy_attachment" "ci_apply_admin" {
   role       = aws_iam_role.ci_apply.name
   policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
 }
+
+# ---- release role: push images from main, and nothing else ----
+# release.yml builds the five service images and pushes them to ECR. Narrower than apply on purpose
+# (ADR-0001, amended Sep 2 2026): a job that only ships images should hold only that. It may push to
+# and read the ${project}/* repositories; it cannot create, delete or reconfigure anything.
+
+data "aws_iam_policy_document" "release_trust" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+    # main only: no pull request, no other branch, no environment can release.
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = [for p in local.repo_sub_prefixes : "${p}:ref:refs/heads/main"]
+    }
+  }
+}
+
+resource "aws_iam_role" "ci_release" {
+  name                 = "${var.project}-ci-release"
+  description          = "GitHub Actions: push service images to ECR from main (release.yml); ECR push only."
+  assume_role_policy   = data.aws_iam_policy_document.release_trust.json
+  max_session_duration = 3600
+}
+
+data "aws_iam_policy_document" "release_ecr" {
+  statement {
+    sid     = "LogInToTheRegistry"
+    actions = ["ecr:GetAuthorizationToken"] # `docker login`; this action accepts no resource narrower than *
+    #checkov:skip=CKV_AWS_356:GetAuthorizationToken is not resource-scopable; every other action below is scoped to steakllm/*
+    resources = ["*"]
+  }
+  statement {
+    sid = "PushToAndReadOurRepositories"
+    actions = [
+      "ecr:BatchCheckLayerAvailability", # push: which layers are already there
+      "ecr:InitiateLayerUpload",
+      "ecr:UploadLayerPart",
+      "ecr:CompleteLayerUpload",
+      "ecr:PutImage",
+      "ecr:BatchGetImage",             # buildx reads existing manifests when it assembles the arm64+amd64 list
+      "ecr:GetDownloadUrlForLayer",    # … and existing layers for the cache
+      "ecr:DescribeImages",            # "already released?" — tags are immutable, so a re-run must look first
+      "ecr:DescribeImageScanFindings", # the scan-on-push verdict for the run summary
+    ]
+    # The repositories live in infra/ecr (a separate state); the prefix, not a data source, keeps
+    # bootstrap free of a dependency on a module it is applied before.
+    resources = ["arn:aws:ecr:${var.region}:${data.aws_caller_identity.current.account_id}:repository/${var.project}/*"]
+  }
+}
+
+resource "aws_iam_role_policy" "ci_release_ecr" {
+  name   = "ecr-push-only"
+  role   = aws_iam_role.ci_release.id
+  policy = data.aws_iam_policy_document.release_ecr.json
+}
