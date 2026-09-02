@@ -114,13 +114,19 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 *Symptom:* `aws dynamodb list-tables` from the Mac → `Read timeout on endpoint URL`; `dynamodb-init` stuck for minutes; Compose reported the service `healthy`.
 *Cause:* the image runs as `dynamodblocal` (uid 1000); Docker creates named volumes root-owned (`drwxr-xr-x root`), so SQLite logged `[14] unable to open database file` and the engine hung on every call instead of failing. The healthcheck accepted "any HTTP status" — the JSON front door answered 400 while the engine behind it was dead.
 *Fix:* `user: root` on the service (a laptop stand-in; documented in the compose file), and a healthcheck that makes a real `ListTables` call and expects `TableNames` within 2 s. Re-ran the init: `catalog` ACTIVE.
-*Lesson:* a healthcheck must exercise the thing you depend on, not the port in front of it. And read the container's own log before the client's error — the cause was on line 10 of `docker compose logs`. Also: the five storage images total 2.1 GB, not the ~600 MB estimated (DynamoDB Local 809 MB, aws-cli 668 MB).
+*Lesson:* a healthcheck must exercise the thing you depend on, not the port in front of it. And read the container's own log before the client's error — the cause was on line 10 of `docker compose logs`. Also: the five storage images total 2.1 GB, not the ~600 MB estimated (DynamoDB Local 809 MB, aws-cli 668 MB). Whole stack on disk after 5.7: ~16 GB (Ollama 6.98 GB, Open WebUI 6.47 GB, Kafka 692 MB).
 
 **Incident 15 — the stub answered 503 to the Mac but its own healthcheck said "connection refused"** (Sep 2 2026, Step 5.5)
 *Symptom:* `curl -i localhost:8081/health` from the Mac → `503` as designed; Compose marked `vllm-stub` *unhealthy*.
 *Cause:* inside the container `localhost` resolves to `::1` (IPv6) and nginx listens on IPv4 only, so the healthcheck's `wget` could not connect. The Mac's request arrives through Docker's published port on IPv4 and never sees the difference.
 *Fix:* healthcheck targets `127.0.0.1` explicitly. Verified in-container (exit 0) before recreating.
 *Lesson:* an address must be right for where the *caller* lives — the same rule as Kafka's advertised listeners. In healthchecks, write `127.0.0.1`, never `localhost`.
+
+**Incident 16 — `docker compose up --wait` exits 1 because an init container "exited (0)"** (Sep 2 2026, Step 5.7)
+*Symptom:* `make up` returned exit 2 after 8 s with Open WebUI still `health: starting`; the raw Compose output ended with `container steakllm-minio-init-1 exited (0)`.
+*Cause:* `--wait` treats *any* container that stops as a failure, even a one-shot that finished successfully. It was designed for long-running services; our four init containers are exactly the case it does not handle.
+*Fix:* two-phase `make up`: `up -d --wait` on the seven long-running services (nothing depends on the inits, so they don't start), then `up -d` the inits and `docker compose wait` on them, which returns their real exit codes. 17 s to fully healthy; exit 0.
+*Lesson:* when a tool's exit code disagrees with what you can see (`ps` said healthy), read the tool's last line before the tool's flag. And measure: "up took 8 s" was the tell — too fast for a 30 s start_period.
 
 **Open item — Ollama image is 6.98 GB** (Sep 2 2026, Step 5.5)
 `ollama/ollama:0.33.2` bundles GPU runtimes we never use on CPU. Fine on the laptop; on the Graviton node (Step 8) a 7 GB pull costs minutes and root-volume space. The `/v1/embeddings` contract makes the server swappable: candidate replacement is a self-built ~400 MB ONNX container serving `BAAI/bge-small-en-v1.5` (arm64 + amd64). Decide at Step 8; record in ADR-0005 as a known trade-off.

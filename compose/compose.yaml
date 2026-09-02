@@ -202,9 +202,32 @@ services:
       timeout: 3s
       retries: 6
 
+  # ---- Open WebUI: the chat front-end, talking ONLY to the gateway (as it will on the tailnet) -----
+  # The gateway arrives in Step 6; until then the UI loads with no models, which is correct.
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:v0.11.3 # ~6.5 GB: bundles its own ML libraries
+    ports:
+      - "${OPEN_WEBUI_PORT:-3000}:8080"
+    volumes:
+      - open-webui-data:/app/backend/data
+    environment:
+      OPENAI_API_BASE_URL: ${GATEWAY_URL}
+      OPENAI_API_KEY: ${GATEWAY_API_KEY}
+      ENABLE_OLLAMA_API: "false" # no side door to the embedding server; chat goes through the gateway
+      WEBUI_AUTH: "false" # laptop only; in the cluster the tailnet is the door
+      ENABLE_SIGNUP: "false"
+      WEBUI_NAME: SteakLLM (local)
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
 volumes:
   minio-data:
   dynamodb-data:
   qdrant-data:
   kafka-data:
   ollama-models:
+  open-webui-data:
