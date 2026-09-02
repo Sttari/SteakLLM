@@ -17,6 +17,7 @@ Running log of the environment, every incident (cause → fix → lesson), and e
 | AWS | account `066591056087`, region `us-east-1`, budget `steakllm-monthly` ($100 limit; alarms at 80 % actual, 100 % actual, 100 % forecasted) — created in Step 2 |
 | Dependabot | version updates weekly (`.github/dependabot.yml`); alerts + security updates enabled by hand Aug 28 2026 (`gh api -X PUT …/vulnerability-alerts`, `…/automated-security-fixes`) — private repos don't get them by default |
 | CI/CD (Step 3) | `ci.yml` — gitleaks · terraform fmt/validate · tflint · checkov · ruff, required on `main` (strict) · `plan.yml` — plan role via OIDC, sticky comment per module on infra PRs · `apply.yml` — `production` environment (owner approves, protected branches only), apply role, per-module queue; bootstrap excluded · `release.yml` deferred to Step 6 |
+| Services (Step 6, in progress) | `common` (settings, logs, loop, clients, text, probes; 32 tests) · `ingest` (10) · `embedder` (8 + 1 integration) · `summarizer` (10 + 1 integration, stub gateway until 6.7) |
 | Contracts (Step 4) | `services/contracts` — package `steakllm-contracts` (uv, src layout, Python 3.12): envelope + 5 event schemas (JSON Schema 2020-12), examples, `ids.doc_id`/`ids.point_id`, golden-file compatibility test; 38 tests; `pytest` required in CI |
 | Local stack preflight (5.1, Sep 2 2026) | Mac: `arm64`, 16 GB RAM; ports 9092/9000/9001/8000/6333/8080/8081/3000 all free. Docker: CLI only at first (Incident 13) → **OrbStack 2.2.3**: engine 29.4.0, aarch64, 8 CPUs, 7.8 GB for containers, Compose v5.1.2. arm64 images: kafka ✓ minio ✓ dynamodb-local ✓ qdrant ✓ open-webui ✓ nginx ✓; **TEI: amd64 only on every tag** (cpu-1.6/1.7/1.8/latest) — and the cluster's CPU node is Graviton (`t4g`), so this is a cluster problem too, not just a laptop one. Bedrock models visible: `amazon.nova-micro-v1:0` (on-demand), `amazon.nova-lite-v1:0` (on-demand), `anthropic.claude-3-haiku-20240307-v1:0` (on-demand), `anthropic.claude-haiku-4-5-20251001-v1:0` (inference profile) |
 | Bedrock (5.6, Sep 2 2026) | model `amazon.nova-micro-v1:0` via the Converse API, region us-east-1, no access request needed (auto-granted); ~$0.035/M input, $0.14/M output tokens. First call: 'ready'. Fallback if summaries disappoint: `anthropic.claude-3-haiku-20240307-v1:0` (~$0.25/$1.25) |
@@ -141,6 +142,12 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 *Fix:* catch the conditional-check refusal in the embedder, log `already past indexed; row untouched`, keep the refreshed points (same ids) and the `DocumentIndexed` event. The unit test that had encoded "raises" now asserts "no-op, row untouched". Ingest's write uses `if_not_exists` for the same reason and never had the problem.
 *Lesson:* under at-least-once delivery, every consumer must classify *why* a write was refused: "someone got there first" is success; only real faults may retry. And an integration test that replays history is worth its 39 s — the fakes could never have shown this.
 
+**Incident 19 — `'Settings' object has no attribute 'summarizer_max_chars'` in a venv that had the field in source** (Sep 2 2026, Step 6.5)
+*Symptom:* the summarizer's tests failed on a field that plainly exists in `services/common/src/…/settings.py`.
+*Cause:* `steakllm-common` is a *path* dependency, which `uv` builds into a wheel and installs at sync time — not an editable link. The summarizer had synced before the field was added, so its venv carried the old build. Every service venv synced earlier (ingest, embedder) has the same stale copy.
+*Fix:* `uv sync --reinstall-package steakllm-common` (and `steakllm-contracts`) in the service after changing a shared library; documented in `services/README.md`. CI is immune (it syncs fresh every run).
+*Lesson:* a path dependency is a snapshot, not a symlink. When a shared library changes, re-sync its consumers — or the tests test yesterday's library.
+
 **Open item — Ollama image is 6.98 GB** (Sep 2 2026, Step 5.5)
 `ollama/ollama:0.33.2` bundles GPU runtimes we never use on CPU. Fine on the laptop; on the Graviton node (Step 8) a 7 GB pull costs minutes and root-volume space. The `/v1/embeddings` contract makes the server swappable: candidate replacement is a self-built ~400 MB ONNX container serving `BAAI/bge-small-en-v1.5` (arm64 + amd64). Decide at Step 8; record in ADR-0005 as a known trade-off.
 
@@ -164,4 +171,5 @@ First pipeline apply: **2026-09-01T20:18:17Z** — `infra/ecr`, 10 resources, by
 - Every terraform command reads the directory it stands in; a "no resources" surprise usually means wrong cwd.
 - Absolute paths in every scripted command: a shell whose working directory persists between commands will happily run `sed` on a file that isn't there.
 - Never feed markdown with backticks through an unquoted heredoc: the shell executes the backticks.
+- gitleaks flags a *variable* named `…api_key` next to a value-shaped argument; the one-line `# gitleaks:allow` with a reason is the fix, never a weaker rule.
 - One bad test file tripped two independent gates (fmt's formatting, tflint's dead-code rule) — layered checks each catch their own concern.

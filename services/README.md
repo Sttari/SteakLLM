@@ -47,7 +47,7 @@ Entry points are console scripts (`steakllm-embedder`, …) declared in `pyproje
 
 **Errors and limits.** Uploads: 20 MB and `application/pdf`, `text/markdown`, `text/plain` only, enforced by ingest (rejected → `rejected/` prefix, `DocumentDeleted` with `quarantine_rejected`). Per-key quotas in the gateway: requests per minute and tokens per day; over → `429` with `Retry-After`.
 
-**Tests.** `uv run pytest` runs unit tests only. Integration tests are marked `@pytest.mark.integration`, need `make up`, and run with `uv run pytest -m integration`. CI runs both (the stack boots on the runner in Step 6.10).
+**Tests.** `uv run pytest` runs unit tests only. After changing `common` or `contracts`, re-sync each consumer with `uv sync --reinstall-package steakllm-common --reinstall-package steakllm-contracts` — path dependencies are built snapshots, not links (field notes, Incident 19). Integration tests are marked `@pytest.mark.integration`, need `make up`, and run with `uv run pytest -m integration`. CI runs both (the stack boots on the runner in Step 6.10).
 
 ## The routing policy (the gateway)
 

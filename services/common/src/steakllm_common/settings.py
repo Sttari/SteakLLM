@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     gateway_url: str = "http://localhost:8000/v1"
     gateway_api_key: str = "change-me"
 
+    # Summarizer
+    summarizer_max_chars: int = 6000  # prompt budget: the first N characters of the document
+    summarizer_prefer_vllm_seconds: int = 600  # hint to the gateway: wait this long for vLLM
+
     # Probes
     probe_port: int = 8080
 
