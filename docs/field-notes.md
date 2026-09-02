@@ -109,6 +109,12 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 *Fix:* `brew install --cask orbstack` (2.2.3) + first launch. Verified: engine 29.4.0 on aarch64, 8 CPUs, 7.8 GB for containers, Compose v5.1.2, context `orbstack`.
 *Lesson:* third ticked-but-not-met box (Incidents 6, 12). "Prints a version" proves a binary exists, not that the thing works — check the *capability* (`docker info`), not the label.
 
+**Incident 14 — DynamoDB Local "healthy" but every request hung: root-owned volume** (Sep 2 2026, Step 5.3)
+*Symptom:* `aws dynamodb list-tables` from the Mac → `Read timeout on endpoint URL`; `dynamodb-init` stuck for minutes; Compose reported the service `healthy`.
+*Cause:* the image runs as `dynamodblocal` (uid 1000); Docker creates named volumes root-owned (`drwxr-xr-x root`), so SQLite logged `[14] unable to open database file` and the engine hung on every call instead of failing. The healthcheck accepted "any HTTP status" — the JSON front door answered 400 while the engine behind it was dead.
+*Fix:* `user: root` on the service (a laptop stand-in; documented in the compose file), and a healthcheck that makes a real `ListTables` call and expects `TableNames` within 2 s. Re-ran the init: `catalog` ACTIVE.
+*Lesson:* a healthcheck must exercise the thing you depend on, not the port in front of it. And read the container's own log before the client's error — the cause was on line 10 of `docker compose logs`. Also: the five storage images total 2.1 GB, not the ~600 MB estimated (DynamoDB Local 809 MB, aws-cli 668 MB).
+
 **Open item — Dependabot's `uv in /services/*` job fails** (first seen Aug 31 2026; expected resolved Sep 1 2026)
 The weekly "Dependabot Updates" run errored on the `uv` ecosystem because `services/*` had no Python manifests. `services/contracts` now has `pyproject.toml` + `uv.lock` (Step 4.2). *Verify on the next Monday run (Sep 7 2026); if it still fails, diagnose and record the fix here.*
 
