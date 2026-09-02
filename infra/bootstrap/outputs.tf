@@ -22,3 +22,8 @@ output "ci_apply_role_arn" {
   description = "Role GitHub Actions assumes on main / the production environment. Store as repo variable AWS_APPLY_ROLE_ARN."
   value       = aws_iam_role.ci_apply.arn
 }
+
+output "ci_release_role_arn" {
+  description = "Role release.yml assumes from main: ECR push to steakllm/* and nothing else. Stored as the GitHub variable AWS_RELEASE_ROLE_ARN."
+  value       = aws_iam_role.ci_release.arn
+}

@@ -47,3 +47,9 @@ variable "monthly_budget_usd" {
   type        = number
   default     = 100
 }
+
+variable "bedrock_model_id" {
+  description = "The one Bedrock model CI may invoke (the e2e test's gateway and summarizer). Matches BEDROCK_MODEL_ID in .env.example."
+  type        = string
+  default     = "amazon.nova-micro-v1:0"
+}

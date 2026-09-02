@@ -8,8 +8,9 @@ on:
   pull_request:        # every PR, any branch
 
 permissions:
-  contents: read       # checkout only; no job here talks to AWS
+  contents: read       # checkout; the e2e job also needs an OIDC token for Bedrock
   pull-requests: read  # gitleaks-action lists the PR's commits to scan exactly what the PR adds
+  id-token: write      # e2e: assume the plan role (Bedrock InvokeModel only, beyond read)
 
 concurrency:
   group: ci-${{ github.ref }}   # a new push to the same branch cancels the old run
@@ -28,6 +29,20 @@ jobs:
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # auto-minted per run; not a stored secret
+
+  # Dockerfile and Compose misconfigurations (a root user, a missing HEALTHCHECK, a floating base tag…):
+  # Trivy's config scanner, the same tool release.yml points at the built images.
+  trivy-config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          scan-ref: services
+          severity: HIGH,CRITICAL
+          exit-code: "1"
 
   # Formatting and internal consistency of every Terraform module.
   # -backend=false: validate without touching S3 state, so no AWS credentials needed.
@@ -100,3 +115,49 @@ jobs:
             uv run --directory "$dir" pytest
           done
           [ "$found" = 1 ] || { echo "no Python packages found under services/"; exit 1; }
+
+  # The step's promise, on a runner: boot the stack, drop a file, expect searchable + summarized
+  # within 60 s. Skips itself (reporting success) when nothing that could affect it changed.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dorny/paths-filter@v3
+        id: changed
+        with:
+          filters: |
+            stack:
+              - 'services/**'
+              - 'compose/**'
+              - 'tests/e2e/**'
+              - 'Makefile'
+              - '.env.example'
+              - '.github/workflows/ci.yml'
+      - if: steps.changed.outputs.stack == 'true'
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - if: steps.changed.outputs.stack == 'true'
+        name: Assume the plan role (OIDC) for Bedrock
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          output-env-credentials: true
+      - if: steps.changed.outputs.stack == 'true'
+        name: Boot the stack (no UI, no notifier) and run the e2e test
+        env:
+          E2E_BUDGET_SECONDS: "120" # runners are slower than the laptop; the local budget stays 60
+        run: |
+          grep -vE '^AWS_PROFILE=' .env.example > .env          # runner credentials come from the env
+          make build
+          make up INFRA="minio dynamodb qdrant kafka ollama vllm-stub"
+          make e2e
+      - if: failure() && steps.changed.outputs.stack == 'true'
+        name: Stack state on failure
+        run: |
+          make ps || true
+          docker compose --env-file .env --profile services -f compose/compose.yaml logs --no-log-prefix --tail 60 gateway ingest embedder summarizer || true
+      - if: always() && steps.changed.outputs.stack == 'true'
+        run: make down

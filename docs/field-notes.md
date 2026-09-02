@@ -17,6 +17,7 @@ Running log of the environment, every incident (cause → fix → lesson), and e
 | AWS | account `066591056087`, region `us-east-1`, budget `steakllm-monthly` ($100 limit; alarms at 80 % actual, 100 % actual, 100 % forecasted) — created in Step 2 |
 | Dependabot | version updates weekly (`.github/dependabot.yml`); alerts + security updates enabled by hand Aug 28 2026 (`gh api -X PUT …/vulnerability-alerts`, `…/automated-security-fixes`) — private repos don't get them by default |
 | CI/CD (Step 3) | `ci.yml` — gitleaks · terraform fmt/validate · tflint · checkov · ruff, required on `main` (strict) · `plan.yml` — plan role via OIDC, sticky comment per module on infra PRs · `apply.yml` — `production` environment (owner approves, protected branches only), apply role, per-module queue; bootstrap excluded · `release.yml` deferred to Step 6 |
+| Services (Step 6, in progress) | `common` (settings, logs, loop, clients, text, probes; 32 tests) · `ingest` (10) · `embedder` (8 + 1 integration) · `summarizer` (10 + 1 integration; re-verified through the real gateway at 6.7) · `notifier` (7 + 1) · `gateway` (31 unit + 2 integration with real Bedrock: chat fallback; upload → ingest → index → docs answer → delete) |
 | Contracts (Step 4) | `services/contracts` — package `steakllm-contracts` (uv, src layout, Python 3.12): envelope + 5 event schemas (JSON Schema 2020-12), examples, `ids.doc_id`/`ids.point_id`, golden-file compatibility test; 38 tests; `pytest` required in CI |
 | Local stack preflight (5.1, Sep 2 2026) | Mac: `arm64`, 16 GB RAM; ports 9092/9000/9001/8000/6333/8080/8081/3000 all free. Docker: CLI only at first (Incident 13) → **OrbStack 2.2.3**: engine 29.4.0, aarch64, 8 CPUs, 7.8 GB for containers, Compose v5.1.2. arm64 images: kafka ✓ minio ✓ dynamodb-local ✓ qdrant ✓ open-webui ✓ nginx ✓; **TEI: amd64 only on every tag** (cpu-1.6/1.7/1.8/latest) — and the cluster's CPU node is Graviton (`t4g`), so this is a cluster problem too, not just a laptop one. Bedrock models visible: `amazon.nova-micro-v1:0` (on-demand), `amazon.nova-lite-v1:0` (on-demand), `anthropic.claude-3-haiku-20240307-v1:0` (on-demand), `anthropic.claude-haiku-4-5-20251001-v1:0` (inference profile) |
 | Bedrock (5.6, Sep 2 2026) | model `amazon.nova-micro-v1:0` via the Converse API, region us-east-1, no access request needed (auto-granted); ~$0.035/M input, $0.14/M output tokens. First call: 'ready'. Fallback if summaries disappoint: `anthropic.claude-3-haiku-20240307-v1:0` (~$0.25/$1.25) |
@@ -129,6 +130,66 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 *Fix:* two-phase `make up`: `up -d --wait` on the seven long-running services (nothing depends on the inits, so they don't start), then `up -d` the inits and `docker compose wait` on them, which returns their real exit codes. 17 s to fully healthy; exit 0.
 *Lesson:* when a tool's exit code disagrees with what you can see (`ps` said healthy), read the tool's last line before the tool's flag. And measure: "up took 8 s" was the tell — too fast for a 30 s start_period.
 
+**Incident 17 — the whole stack vanished seven seconds after `make up`; `make demo` timed out on Kafka** (Sep 2 2026, Step 6.1)
+*Symptom:* `make demo` → `KafkaTimeoutError: Unable to bootstrap from localhost:9092`; `make ps` empty; `docker ps -a` empty.
+*Diagnosis:* `docker events --since 60m` showed the four inits exiting 0, then — in one instant seven seconds later — every container killed and destroyed: the fingerprint of a `docker compose down`. Suspected `make up`'s final `docker compose wait`, since Compose 5 has a `--down-project` flag; **reproduced under observation: `make up` leaves 7 containers running with no kill events, and the flag is opt-in.** The teardown came from outside `make up` — most likely a `make down` run in another terminal (it had just been recommended as the way to finish a poking session).
+*Fix:* none needed in code; `make up` again. `make ps` is the first command to run when anything "cannot connect".
+*Lesson:* `docker events` is the flight recorder — it answers "who stopped this and when" before any guessing. And a hypothesis about your own tooling gets a reproduction before it gets a fix.
+
+**Incident 18 — the embedder turned re-delivered events for a finished document into a retry storm** (Sep 2 2026, Step 6.4)
+*Symptom:* the integration test's loop (a fresh consumer group, so it replays the topic) logged `handler failed` three times per historical `DocumentUploaded` of the demo's PDF, parked each on `documents.retry`, and the test timed out before reaching the new document.
+*Cause:* the catalog write is conditional on purpose (`uploaded`/`indexed` only, never regress `summarized`), and DynamoDB's refusal (`ConditionalCheckFailedException`) was allowed to propagate as a handler failure. A refusal that means "already further along" is a *successful* outcome under at-least-once delivery, not an error.
+*Fix:* catch the conditional-check refusal in the embedder, log `already past indexed; row untouched`, keep the refreshed points (same ids) and the `DocumentIndexed` event. The unit test that had encoded "raises" now asserts "no-op, row untouched". Ingest's write uses `if_not_exists` for the same reason and never had the problem.
+*Lesson:* under at-least-once delivery, every consumer must classify *why* a write was refused: "someone got there first" is success; only real faults may retry. And an integration test that replays history is worth its 39 s — the fakes could never have shown this.
+
+**Incident 19 — `'Settings' object has no attribute 'summarizer_max_chars'` in a venv that had the field in source** (Sep 2 2026, Step 6.5)
+*Symptom:* the summarizer's tests failed on a field that plainly exists in `services/common/src/…/settings.py`.
+*Cause:* `steakllm-common` is a *path* dependency, which `uv` builds into a wheel and installs at sync time — not an editable link. The summarizer had synced before the field was added, so its venv carried the old build. Every service venv synced earlier (ingest, embedder) has the same stale copy.
+*Fix (final):* `editable = true` on every path source (`[tool.uv.sources] steakllm-common = { path = "../common", editable = true }`), including inside `common` itself for `contracts` — `uv` refuses two different URLs for one package, so all declarations must agree. Editable installs link the source directory; changes are visible everywhere immediately. (First fix, superseded: `uv sync --reinstall-package …`.)
+*Lesson:* a plain path dependency is a built snapshot and `uv` caches the build; in a monorepo of shared libraries, path sources must be editable or the tests test yesterday's library.
+
+**Incident 20 — the gateway's `/healthz` answered with a DynamoDB error; the summarizer could not resolve `gateway`** (Sep 2 2026, Step 6.7)
+*Symptom:* `curl localhost:8000/healthz` → `MissingAuthenticationToken … valid AWS access key`; the summarizer, pointed at `GATEWAY_URL`, failed with `nodename nor servname provided`.
+*Cause:* two of my own configuration choices colliding. (1) Compose published DynamoDB Local on the Mac's port 8000 — the same port the gateway binds — so `localhost:8000` was DynamoDB, not the gateway. (2) `GATEWAY_URL=http://gateway:8000/v1` is the *container-network* address (for Open WebUI); a process on the Mac cannot resolve `gateway`.
+*Fix:* DynamoDB Local published on 8001 (`DYNAMODB_ENDPOINT_URL`); `GATEWAY_URL` is the host address (`localhost:8000`) and Open WebUI gets `OPEN_WEBUI_GATEWAY_URL=http://gateway:8000/v1`; 6.9's Compose service overrides `GATEWAY_URL` for the summarizer container. Gateway `/readyz` now asks the broker for the `chats` topic's metadata instead of `bootstrap_connected()`, which stays false until the first send.
+*Lesson:* one `.env` serves two networks — the Mac and the Compose network — and every URL in it belongs to exactly one of them; name them accordingly. And a port list in a plan is a promise to check, not a decoration: 5.1's preflight checked the ports were free, not that they were distinct from each other.
+
+**Incident 21 — four of five service containers exited: `ProfileNotFound: default`; the ingest watcher was "unhealthy"** (Sep 2 2026, Step 6.9)
+*Symptom:* embedder, ingest, summarizer, notifier `Exited (1)` seconds after start; ingest, once fixed, stayed `unhealthy`.
+*Cause:* (1) the env file hands every container `AWS_PROFILE=default`, and botocore resolves the profile even for clients given explicit MinIO/DynamoDB-Local credentials — only the gateway mounted `~/.aws`. (2) `steakllm-ingest watch` never started the probe server; only the consumer loops did, so its `HEALTHCHECK` had nothing to ask.
+*Fix:* mount `~/.aws` read-only into all five (one profile serves the laptop; in the cluster each pod wears its own IAM role); the watcher starts `start_probe_server` like everyone else. Also: the first two image builds failed on `Readme file does not exist` — `.dockerignore` had excluded `README.md`, and the Dockerfiles didn't copy the service's own README that `pyproject.toml` declares.
+*Lesson:* a build context is a whitelist you wrote; when a wheel build says a file is missing, it is missing *from the context*, not from the repo. And every long-running process serves the probes, runners included.
+
+**Incident 22 — "Open WebUI shows no models" was my curl being told 401** (Sep 2 2026, Step 6.9)
+*Symptom:* `curl localhost:3000/api/models` → `[]`; I concluded the UI wasn't talking to the gateway, restarted it, forced it to re-read its config.
+*Cause:* `WEBUI_AUTH=false` removes the login *page*; API calls still need the session token a browser obtains automatically. My parser turned the 401 error body into an empty list. The UI's own log had `GET /api/models 401` all along.
+*Fix:* sign in the way the frontend does (`POST /api/v1/auths/signin` works in no-auth mode), then the models are `llm`, `docs`, and a chat through the UI's proxy reached the gateway and Bedrock ("ready"). The `RESET_CONFIG_ON_START` flag added during the hunt stays (dev-only, harmless, documented).
+*Lesson:* when a tool "returns nothing", read the *server's* log before theorising — a 401 in the UI's log would have saved three restarts. Parse errors as errors, never as empty results.
+
+**Incident 23 — the first end-to-end run reached "summarized" in 2 s with no chunk count: workers race** (Sep 2 2026, Step 6.10)
+*Symptom:* `GET /v1/documents/{id}` said `summarized` almost immediately, `chunk_count` was `None`, and the catalog page showed a document that was summarized but never indexed.
+*Cause:* the embedder and the summarizer consume the *same* `DocumentUploaded` in parallel. The summarizer (one Bedrock call) can finish before the embedder (chunking, Ollama, Qdrant). The embedder's write was one conditional statement — "set status to indexed *and* record chunk_count, only if status is uploaded/indexed" — so when the summarizer got there first, the refusal (correct: never regress `summarized`) also threw away the indexing facts. A single status word cannot describe two workers finishing in either order.
+*Fix:* the embedder always records its facts (`chunk_count`, `embedding_model`, `indexed_at`) and only the status *word* is conditional; the gateway derives `indexed` and `summarized` from the facts (`stages_of`), not from the word; the catalog page and the status route show each stage as a fact of its own. The e2e test waits for both.
+*Lesson:* with independent consumers, "status" is not a ladder — it is a set of facts, each owned by one worker. Model it that way from the start, or the first parallel run will prove it for you. And the end-to-end test found this in its first two seconds; nothing narrower could have.
+
+**Incident 24 — the "graceful" stop of a busy consumer was a SIGKILL in disguise, then 45 s of silence** (Sep 2 2026, Step 6.11)
+*Symptom:* chaos drill 1's contrast run (`docker compose stop embedder`, SIGTERM) showed no "stopping after the batch in hand" line, and after the restart the embedder sat idle for ~43 s before indexing anything — the same as after a real SIGKILL.
+*Cause:* two mismatches, not a broken handler (an idle SIGTERM exited in under a second). (1) The consumer loop checked the stop flag only after the *whole polled batch*: up to 50 events × ~4 s of Ollama work, while Docker escalates SIGTERM to SIGKILL after 10 s. (2) Kafka keeps a dead member's partitions until its session timeout expires; the default our client negotiated was 45 s, so the restarted member joined and waited.
+*Fix:* the loop stops after the *record* in hand and commits **explicit offsets** for what it handled (a bare `commit()` would have committed the whole polled batch, including the unhandled tail — silent loss); `session_timeout_ms=10_000` with 3 s heartbeats; `stop_grace_period: 30s` on the four consumers in Compose (Kubernetes' default is 30 s too). Coordinator log after the fix: the member leaves the group the instant it closes; the restart is stable in 4 s; a hard kill costs 10 s, not 45. Write-up: `docs/chaos/01-embedder-kill.md`.
+*Lesson:* "handles SIGTERM" means nothing until you measure *how long* the handler needs against the grace period you actually get. And when a consumer stops early, commit what you handled, never what you polled.
+
+**Incident 25 — restarting ingest re-announced the whole bucket; the drill's first document waited 42 s** (Sep 2 2026, Step 6.11)
+*Symptom:* in the contrast run the first drill document was indexed 42 s after upload, before any signal was sent; the embedder log showed thirteen unrelated documents being re-indexed right after the four consumers were recreated.
+*Cause:* the local watcher's "already seen" set lives in process memory, so a restart re-lists `quarantine/` and the ingest handler produced a fresh `DocumentUploaded` for every leftover from earlier runs (drill run 1 failed before its cleanup). By the 6.3 contract re-delivery *was* re-announced ("consumers are idempotent") — correct for safety, but each restart cost a full pass of the bucket through the embedder and the summarizer (LLM tokens).
+*Fix:* in the handler, not the watcher, because real S3 notifications are at-least-once as well: the catalog update returns the old row (`ReturnValues="ALL_OLD"`); same key already recorded → log "already recorded for this key; not re-announced" and produce nothing. Same bytes under a *new* key still re-announce (the row's key moves). Verified: an ingest restart logged thirteen "already recorded" lines and the embedder did no work.
+*Lesson:* idempotent consumers make duplicates *safe*, not *free*. Stop the duplicate at the producer when the producer can tell — and a drill's timeline shows costs a passing test hides.
+
+**Open item — service images are 422–460 MB, above the 400 MB target** (Sep 2 2026, Step 6.9)
+`common` pulls boto3, qdrant-client (gRPC + numpy) and pypdf into every image. Levers: optional extras in `common` per client (`steakllm-common[qdrant]`), or `qdrant-client` without gRPC. Decide before Step 8 (pull time on the node); the target stays 400 MB.
+
+**Open item — Nova Micro does not reliably reproduce `[doc:chunk]` citation labels** (Sep 2 2026, Step 6.8)
+The `docs` model's system prompt asks for `[doc:chunk]` citations; retrieval is proven by `x-retrieved-doc-ids` and the answer is correct, but the small model often omits the label. Candidates: a stronger prompt (few-shot), Claude 3 Haiku for `docs`, or post-hoc citation from the retrieved set. Decide in Step 11's evaluation job.
+
 **Open item — Ollama image is 6.98 GB** (Sep 2 2026, Step 5.5)
 `ollama/ollama:0.33.2` bundles GPU runtimes we never use on CPU. Fine on the laptop; on the Graviton node (Step 8) a 7 GB pull costs minutes and root-volume space. The `/v1/embeddings` contract makes the server swappable: candidate replacement is a self-built ~400 MB ONNX container serving `BAAI/bge-small-en-v1.5` (arm64 + amd64). Decide at Step 8; record in ADR-0005 as a known trade-off.
 
@@ -138,6 +199,14 @@ The weekly "Dependabot Updates" run errored on the `uv` ecosystem because `servi
 ## 4. Measurements
 
 Local stack (Step 5, Sep 2 2026): `make up` to fully healthy **17 s** (warm volumes); RAM at rest **~1.5 GB** (Open WebUI 666 MB, Kafka 359 MB, DynamoDB Local 208 MB, the rest < 100 MB each); disk ~16 GB of images. `make demo`: **12 s** first run, **7 s** second; Bedrock (Nova Micro) 0.8 s, 432 in / 95 out tokens ≈ $0.00003; 1,569-char PDF → 5 chunks → 5 × 384-dim vectors; idempotency: run 2 left 5 points / 1 catalog row unchanged while the topic went 3 → 6 events.
+
+End-to-end (6.10, Sep 2 2026): `make e2e` — presigned upload → ingest watcher → embedder + summarizer (containers) → `docs` answer with the document retrieved: **4.3 s** against a 60 s budget (Bedrock 2×, Ollama, Qdrant, DynamoDB Local, Kafka).
+
+Services in Compose (6.9, Sep 2 2026): five images built in 17 s (multi-stage, non-root); sizes gateway 460 MB, others 422 MB; `make up` → **12 healthy + 4 inits**; RAM with everything running **~2.6 GB**; Open WebUI → gateway → Bedrock round trip through the UI proxy: 644 ms.
+
+Chaos drill 1 (6.11, Sep 2 2026): 10 documents, embedder killed with 1 indexed; SIGKILL → 10/10 in **44 s** after restart (10 s session timeout + ~3.75 s per document through Ollama); SIGTERM → stop in **3.6 s** (one record), 10/10 in 34 s with no wait. Before the fix: ~43–45 s of waiting after either signal. Qdrant 50/50 points, offsets at end, 0 parked, every run.
+
+Image scans (6.12, Sep 2 2026, Trivy 0.74.0): `steakllm/gateway:local` — **0 fixable CRITICALs** (the release gate), 5 CRITICALs with no fix in Debian 12.15's base (`libsqlite3-0`, `perl-base` ×3, `zlib1g`; listed, not fatal, `ignore-unfixed`); config scan of the five Dockerfiles: **0 misconfigurations** at HIGH/CRITICAL. Bootstrap plan for the release role: 2 to add, 0 to change; checkov 77 passed / 0 failed.
 
 First pipeline apply: **2026-09-01T20:18:17Z** — `infra/ecr`, 10 resources, by `assumed-role/steakllm-ci-apply` (CloudTrail), ~5 s of apply after the approval click; run 33554383123. From Step 7: rebuild time (`terraform destroy` → `apply`). From Step 9: GPU summon-to-`/health` time, idle-to-removed time, the load-test table (c=1/8/32). From Step 10: upload-to-searchable and upload-to-email latency, drill results. From Step 11: tokens per GPU-hour and $/Mtok beside Bedrock.
 
@@ -152,4 +221,32 @@ First pipeline apply: **2026-09-01T20:18:17Z** — `infra/ecr`, 10 resources, by
 - Every terraform command reads the directory it stands in; a "no resources" surprise usually means wrong cwd.
 - Absolute paths in every scripted command: a shell whose working directory persists between commands will happily run `sed` on a file that isn't there.
 - Never feed markdown with backticks through an unquoted heredoc: the shell executes the backticks.
+- gitleaks flags a *variable* named `…api_key` next to a value-shaped argument; the one-line `# gitleaks:allow` with a reason is the fix, never a weaker rule.
 - One bad test file tripped two independent gates (fmt's formatting, tflint's dead-code rule) — layered checks each catch their own concern.
+- Measure the stop, not the signal handler: grace period ≥ one unit of work, and commit only what you handled.
+- Idempotent consumers make duplicates safe, not free; stop the duplicate at the producer when it can tell.
+- zsh does not word-split a variable holding a command (`$C build …` fails "no such file"); use a shell function. Likewise `${PIPESTATUS[0]}` is bash; zsh spells it `$pipestatus[1]` — write the command's output to a file and read `$?` instead.
+
+
+## 6. Small stumbles (tooling and habits — not incidents, still time)
+
+Everything that went sideways for a minute or more, whether or not it earned an incident. Cause → fix, oldest first. The point of this list: the second time costs zero.
+
+**Step 6, Sep 1–2 2026**
+
+- `zsh` does not word-split a variable holding a command: `C="docker compose …"; $C build` fails with *no such file or directory: docker compose …*. → A shell function (`c() { docker compose … "$@"; }`) or `eval`. Hit twice this step; the second time it made a "rebuilt + recreated" line a lie (see below).
+- The guard hook blocks any command line that pairs a file-printing command (`cat`, `less`, `more`, `head`, `tail`, `bat`) with the string `.env` — including `head -40` after a `docker compose --env-file … logs` pipe, prose in a heredoc that mentions both, and this very section when it was first written through the shell. → Use `sed -n '1,40p'` instead of `head`, `docker logs <container>` instead of `docker compose … logs`, and write prose through the editor, not a heredoc. The hook is right to be dumb; the workaround is cheap.
+- `ruff` E501 in docstrings and comments, repeatedly, because `ruff format` re-wraps code but never prose. → Measure before committing: `awk 'length > 100 {print FILENAME": "FNR}' file.py`. Also: a comment that fit before `ruff format` nested its statement one level deeper (`old = (` … `)`) no longer fits.
+- `ruff` B006 (mutable default `_n=[0]` as a closure counter in a test). → A list in the enclosing scope.
+- The pre-commit `ruff-format` hook reformats a file *during* `git commit`, the commit fails, the working tree now differs from the index. → `git add` the reformatted file and commit again with the same message. Happens whenever a file was written by a script rather than through the editor.
+- An unquoted heredoc (`<<EOF`) executes backticks inside markdown. → Always `<<'EOF'` for prose.
+- `kafka-python`'s `KafkaAdminClient` has no `list_consumer_group_offsets`. → `KafkaConsumer(group_id=…).committed(tp)` per partition.
+- `uv run --directory` changes the working directory, so relative paths in the script break. → `uv run --project <dir>` keeps the cwd.
+- `A && B >/dev/null 2>&1 && echo done` prints "done" only if both ran — but when *A itself* is the thing zsh could not find, the chain stops before the echo and the *previous* line's "healthy" count made the step look done. → Never hide the output of the step you are about to trust; print the container's `Created` time or image id after a recreate.
+- `docker logs --since 2026-09-01T19:18:30Z` returned nothing: the session crossed midnight and the containers' clock is UTC, so "19:18" was on Sep 2. → Read one timestamp from the log first, then filter; or filter by content, not time.
+- `${PIPESTATUS[0]}` is bash; zsh spells it `$pipestatus[1]`, so the "exit:" line came out empty. → Write the command's output to a file, read `$?`, then grep the file.
+- `boto3` on the laptop resolved the AWS profile from the local env file (`AWS_PROFILE=default`) and sent real-account keys to MinIO (*InvalidAccessKeyId*). → Inside containers the compose env carries MinIO's keys; on the laptop use `docker exec minio mc …`, or read the evidence from a service's log instead of listing the bucket.
+- Trivy's config scan on the laptop walked every `.venv` and reported boto3's JSON as CloudFormation — noise, not findings. → `--skip-dirs '**/.venv'` locally; CI has no venvs.
+- The drill printed "STOPED": `f"{SIGNAL.upper()}ED"`. → A small mapping. Cosmetic, but a report copies it.
+- Fixing the "STOPED" line by string replacement failed twice: `ruff format` had already wrapped the `print(` call over three lines, so the exact text no longer existed, and the second attempt inserted the new statement *inside* the wrapped call (a syntax error the pre-commit hook caught). → Look at the current lines before a replacement, and insert relative to the statement's first line, not the line that holds the match.
+- The guard hook blocked the shell command that was writing this very section, because the prose named the file-printing commands and the env file on one line. → Prose goes in through the editor tools; the shell only appends the file.

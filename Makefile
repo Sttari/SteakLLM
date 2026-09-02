@@ -1,7 +1,7 @@
-.PHONY: help lint test up down nuke ps logs demo
+.PHONY: help lint test build up down nuke ps logs demo e2e
 
 # One .env at the repo root serves Compose and the services alike (see .env.example).
-COMPOSE := docker compose --env-file .env -f compose/compose.yaml
+COMPOSE := docker compose --env-file .env --profile services -f compose/compose.yaml
 
 help: ## list targets
 	@grep -E "^[a-z]+:.*## " $(MAKEFILE_LIST) | awk -F ":.*## " '{printf "  %-8s %s\n", $$1, $$2}'
@@ -17,13 +17,18 @@ test: ## run every Python package's tests from its lockfile (same loop as ci.yml
 
 # Two phases: `--wait` counts a one-shot container that exited 0 as a failure (Incident 16), so the
 # long-running services are waited on first, then the init containers run and their exit codes are checked.
-SERVICES := minio dynamodb qdrant kafka ollama vllm-stub open-webui
+INFRA    := minio dynamodb qdrant kafka ollama vllm-stub open-webui
+SERVICES := $(INFRA) gateway ingest embedder summarizer notifier
 INITS    := minio-init dynamodb-init kafka-init ollama-init
 
-up: ## start the local dev stack: wait for every service to be healthy, then run the one-shot inits
-	$(COMPOSE) up -d --wait $(SERVICES)
+build: ## build the five service images (multi-stage, non-root)
+	$(COMPOSE) build gateway ingest embedder summarizer notifier
+
+up: ## start the local dev stack (infra + the five services): wait for healthy, then run the inits
+	$(COMPOSE) up -d --wait $(INFRA)
 	$(COMPOSE) up -d $(INITS)
 	@$(COMPOSE) wait $(INITS) >/dev/null
+	$(COMPOSE) up -d --wait gateway ingest embedder summarizer notifier
 	@$(COMPOSE) ps -a --format 'table {{.Service}}\t{{.Status}}'
 
 down: ## stop the local dev stack (data volumes are kept; see nuke)
@@ -39,6 +44,9 @@ ps: ## show the stack's services and health
 
 logs: ## follow the stack's logs (SERVICE=name for one service)
 	$(COMPOSE) logs -f $(SERVICE)
+
+e2e: ## the end-to-end test against the running stack: upload → summarized → docs answer, under 60 s
+	uv run --with pytest --with httpx tests/e2e/test_pipeline.py
 
 demo: ## drive the sample PDF through the stack by hand: MinIO → Kafka → Ollama → Qdrant → Bedrock → catalog
 	uv run compose/demo.py
