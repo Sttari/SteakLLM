@@ -129,6 +129,12 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 *Fix:* two-phase `make up`: `up -d --wait` on the seven long-running services (nothing depends on the inits, so they don't start), then `up -d` the inits and `docker compose wait` on them, which returns their real exit codes. 17 s to fully healthy; exit 0.
 *Lesson:* when a tool's exit code disagrees with what you can see (`ps` said healthy), read the tool's last line before the tool's flag. And measure: "up took 8 s" was the tell — too fast for a 30 s start_period.
 
+**Incident 17 — the whole stack vanished seven seconds after `make up`; `make demo` timed out on Kafka** (Sep 2 2026, Step 6.1)
+*Symptom:* `make demo` → `KafkaTimeoutError: Unable to bootstrap from localhost:9092`; `make ps` empty; `docker ps -a` empty.
+*Diagnosis:* `docker events --since 60m` showed the four inits exiting 0, then — in one instant seven seconds later — every container killed and destroyed: the fingerprint of a `docker compose down`. Suspected `make up`'s final `docker compose wait`, since Compose 5 has a `--down-project` flag; **reproduced under observation: `make up` leaves 7 containers running with no kill events, and the flag is opt-in.** The teardown came from outside `make up` — most likely a `make down` run in another terminal (it had just been recommended as the way to finish a poking session).
+*Fix:* none needed in code; `make up` again. `make ps` is the first command to run when anything "cannot connect".
+*Lesson:* `docker events` is the flight recorder — it answers "who stopped this and when" before any guessing. And a hypothesis about your own tooling gets a reproduction before it gets a fix.
+
 **Open item — Ollama image is 6.98 GB** (Sep 2 2026, Step 5.5)
 `ollama/ollama:0.33.2` bundles GPU runtimes we never use on CPU. Fine on the laptop; on the Graviton node (Step 8) a 7 GB pull costs minutes and root-volume space. The `/v1/embeddings` contract makes the server swappable: candidate replacement is a self-built ~400 MB ONNX container serving `BAAI/bge-small-en-v1.5` (arm64 + amd64). Decide at Step 8; record in ADR-0005 as a known trade-off.
 
