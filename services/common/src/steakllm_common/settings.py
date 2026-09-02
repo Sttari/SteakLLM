@@ -79,6 +79,14 @@ class Settings(BaseSettings):
     breaker_failures: int = 3
     breaker_open_seconds: float = 60.0
     chat_max_tokens_cap: int = 2048
+    gateway_rpm: int = 60  # requests per minute per key
+    gateway_tokens_per_day: int = 200_000
+    gateway_demo_key: str | None = None  # the public demo key: tighter quota, demo collection only
+    gateway_demo_rpm: int = 10
+    gateway_demo_tokens_per_day: int = 20_000
+    qdrant_demo_collection: str = "demo"
+    rag_top_k: int = 5
+    presign_expires_seconds: int = 300
 
     # Probes
     probe_port: int = 8080

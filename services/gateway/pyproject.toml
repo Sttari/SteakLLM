@@ -21,11 +21,15 @@ steakllm-gateway = "steakllm_gateway.main:cli"
 dev = [
   "pytest>=8",
   "ruff>=0.16",
+  "steakllm-ingest",    # the end-to-end integration test drives the doorbell in-process
+  "steakllm-embedder",  # … and the librarian
 ]
 
 [tool.uv.sources]
 steakllm-contracts = { path = "../contracts", editable = true }
 steakllm-common = { path = "../common", editable = true }
+steakllm-ingest = { path = "../ingest", editable = true }
+steakllm-embedder = { path = "../embedder", editable = true }
 
 [build-system]
 requires = ["hatchling"]

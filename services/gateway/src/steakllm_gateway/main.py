@@ -3,15 +3,23 @@
 from __future__ import annotations
 
 import sys
+from functools import partial
 
 import uvicorn
-from steakllm_common.clients import bedrock_client
+from steakllm_common.clients import (
+    bedrock_client,
+    catalog_table,
+    embed,
+    qdrant_client,
+    s3_client,
+)
 from steakllm_common.kafka import make_producer
 from steakllm_common.logging import configure, get_logger
 from steakllm_common.settings import get_settings
 
 from .app import Deps, create_app
 from .backends import BedrockBackend, VllmBackend
+from .rag import Retriever
 from .router import CircuitBreaker, Router
 
 log = get_logger(__name__)
@@ -32,6 +40,9 @@ def build_deps() -> Deps:
         settings=s,
         router=router,
         producer=producer,
+        s3=s3_client(s),
+        table=catalog_table(s),
+        retriever=Retriever(qdrant_client(s), partial(embed, s), top_k=s.rag_top_k),
         ready=lambda: bool(producer.partitions_for(s.topic_chats)),
     )
 

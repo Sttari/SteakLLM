@@ -910,6 +910,27 @@ dev = [
 ]
 
 [[package]]
+name = "steakllm-embedder"
+version = "0.1.0"
+source = { editable = "../embedder" }
+dependencies = [
+    { name = "steakllm-common" },
+    { name = "steakllm-contracts" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "steakllm-common", editable = "../common" },
+    { name = "steakllm-contracts", editable = "../contracts" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8" },
+    { name = "ruff", specifier = ">=0.16" },
+]
+
+[[package]]
 name = "steakllm-gateway"
 version = "0.1.0"
 source = { editable = "." }
@@ -925,6 +946,8 @@ dependencies = [
 dev = [
     { name = "pytest" },
     { name = "ruff" },
+    { name = "steakllm-embedder" },
+    { name = "steakllm-ingest" },
 ]
 
 [package.metadata]
@@ -938,6 +961,30 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "pytest", specifier = ">=8" },
+    { name = "ruff", specifier = ">=0.16" },
+    { name = "steakllm-embedder", editable = "../embedder" },
+    { name = "steakllm-ingest", editable = "../ingest" },
+]
+
+[[package]]
+name = "steakllm-ingest"
+version = "0.1.0"
+source = { editable = "../ingest" }
+dependencies = [
+    { name = "steakllm-common" },
+    { name = "steakllm-contracts" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "steakllm-common", editable = "../common" },
+    { name = "steakllm-contracts", editable = "../contracts" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "moto", extras = ["s3", "dynamodb"], specifier = ">=5.0" },
     { name = "pytest", specifier = ">=8" },
     { name = "ruff", specifier = ">=0.16" },
 ]
