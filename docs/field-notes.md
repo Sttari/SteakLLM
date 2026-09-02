@@ -184,6 +184,9 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 *Fix:* in the handler, not the watcher, because real S3 notifications are at-least-once as well: the catalog update returns the old row (`ReturnValues="ALL_OLD"`); same key already recorded → log "already recorded for this key; not re-announced" and produce nothing. Same bytes under a *new* key still re-announce (the row's key moves). Verified: an ingest restart logged thirteen "already recorded" lines and the embedder did no work.
 *Lesson:* idempotent consumers make duplicates *safe*, not *free*. Stop the duplicate at the producer when the producer can tell — and a drill's timeline shows costs a passing test hides.
 
+**Open item — ECR scan-on-push did not scan the multi-arch images** (Sep 2 2026, Step 6.12)
+The five repositories have `scan_on_push = true` and the registry is in `BASIC` scanning mode, yet after the first release every image — the `sha-3432f6a` index and its two platform children — shows scan status `None`. Basic scanning does not scan an image index, and the children pushed as part of one did not trigger a scan either. Trivy in `release.yml` is the gate that actually ran (0 fixable CRITICALs per image), so nothing shipped unscanned. Candidates: a post-push step in `release.yml` that calls `ecr:StartImageScan` on each child digest and waits for the verdict (the release role would need that one action; bootstrap apply), or enhanced scanning (Inspector, paid) at Step 11. Decide before Step 8 pulls these images onto the node.
+
 **Open item — service images are 422–460 MB, above the 400 MB target** (Sep 2 2026, Step 6.9)
 `common` pulls boto3, qdrant-client (gRPC + numpy) and pypdf into every image. Levers: optional extras in `common` per client (`steakllm-common[qdrant]`), or `qdrant-client` without gRPC. Decide before Step 8 (pull time on the node); the target stays 400 MB.
 
@@ -207,6 +210,8 @@ Services in Compose (6.9, Sep 2 2026): five images built in 17 s (multi-stage, n
 Chaos drill 1 (6.11, Sep 2 2026): 10 documents, embedder killed with 1 indexed; SIGKILL → 10/10 in **44 s** after restart (10 s session timeout + ~3.75 s per document through Ollama); SIGTERM → stop in **3.6 s** (one record), 10/10 in 34 s with no wait. Before the fix: ~43–45 s of waiting after either signal. Qdrant 50/50 points, offsets at end, 0 parked, every run.
 
 Image scans (6.12, Sep 2 2026, Trivy 0.74.0): `steakllm/gateway:local` — **0 fixable CRITICALs** (the release gate), 5 CRITICALs with no fix in Debian 12.15's base (`libsqlite3-0`, `perl-base` ×3, `zlib1g`; listed, not fatal, `ignore-unfixed`); config scan of the five Dockerfiles: **0 misconfigurations** at HIGH/CRITICAL. Bootstrap plan for the release role: 2 to add, 0 to change; checkov 77 passed / 0 failed.
+
+First release (6.12, Sep 2 2026, run 33684077969 on `main` at `3432f6a`): five jobs in parallel, **128–154 s** each (amd64 build + Trivy + arm64 under QEMU + push); images in ECR as OCI indexes with `linux/arm64` + `linux/amd64`, **96–104 MiB compressed** (gateway 103.5, the four consumers 95.9 — the 422–460 MB local figure is the uncompressed layer sum); Trivy: 0 fixable CRITICALs in every image; tag `sha-3432f6a`, immutable.
 
 First pipeline apply: **2026-09-01T20:18:17Z** — `infra/ecr`, 10 resources, by `assumed-role/steakllm-ci-apply` (CloudTrail), ~5 s of apply after the approval click; run 33554383123. From Step 7: rebuild time (`terraform destroy` → `apply`). From Step 9: GPU summon-to-`/health` time, idle-to-removed time, the load-test table (c=1/8/32). From Step 10: upload-to-searchable and upload-to-email latency, drill results. From Step 11: tokens per GPU-hour and $/Mtok beside Bedrock.
 
