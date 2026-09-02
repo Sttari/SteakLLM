@@ -135,6 +135,12 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 *Fix:* none needed in code; `make up` again. `make ps` is the first command to run when anything "cannot connect".
 *Lesson:* `docker events` is the flight recorder — it answers "who stopped this and when" before any guessing. And a hypothesis about your own tooling gets a reproduction before it gets a fix.
 
+**Incident 18 — the embedder turned re-delivered events for a finished document into a retry storm** (Sep 2 2026, Step 6.4)
+*Symptom:* the integration test's loop (a fresh consumer group, so it replays the topic) logged `handler failed` three times per historical `DocumentUploaded` of the demo's PDF, parked each on `documents.retry`, and the test timed out before reaching the new document.
+*Cause:* the catalog write is conditional on purpose (`uploaded`/`indexed` only, never regress `summarized`), and DynamoDB's refusal (`ConditionalCheckFailedException`) was allowed to propagate as a handler failure. A refusal that means "already further along" is a *successful* outcome under at-least-once delivery, not an error.
+*Fix:* catch the conditional-check refusal in the embedder, log `already past indexed; row untouched`, keep the refreshed points (same ids) and the `DocumentIndexed` event. The unit test that had encoded "raises" now asserts "no-op, row untouched". Ingest's write uses `if_not_exists` for the same reason and never had the problem.
+*Lesson:* under at-least-once delivery, every consumer must classify *why* a write was refused: "someone got there first" is success; only real faults may retry. And an integration test that replays history is worth its 39 s — the fakes could never have shown this.
+
 **Open item — Ollama image is 6.98 GB** (Sep 2 2026, Step 5.5)
 `ollama/ollama:0.33.2` bundles GPU runtimes we never use on CPU. Fine on the laptop; on the Graviton node (Step 8) a 7 GB pull costs minutes and root-volume space. The `/v1/embeddings` contract makes the server swappable: candidate replacement is a self-built ~400 MB ONNX container serving `BAAI/bge-small-en-v1.5` (arm64 + amd64). Decide at Step 8; record in ADR-0005 as a known trade-off.
 

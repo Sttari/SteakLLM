@@ -8,6 +8,7 @@ What the five services share, so the policies in `services/README.md` exist once
 | `logging` | `configure(service)`, `get_logger(name)`, `bound(**ids)` — one JSON line per log call, ids attached |
 | `kafka` | `make_producer`, `make_consumer`, `produce`, `ConsumerLoop` — batches, idempotent handler, retry → `.retry` → `.dlq`, SIGTERM |
 | `clients` | `s3_client`, `catalog_table`, `qdrant_client`, `bedrock_client`, `embed` |
+| `text` | `extract_text(body, content_type)` (PDF, Markdown, plain), `chunk(text, size, overlap)` — deterministic |
 | `health` | `start_probe_server(port, ready)` — `/healthz`, `/readyz` |
 
 ```
