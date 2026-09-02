@@ -1,10 +1,12 @@
-# The one door out (ADR-0007): a t4g.nano running fck-nat, replaced automatically when it dies.
+# The one door out (ADR-0007): a t4g.nano running fck-nat.
 #
-# How replacement works without touching the routes: the private route table points at a *static*
-# network interface (ENI) that we create here and that carries the Elastic IP. The instance itself is
-# disposable — an autoscaling group of one launches it from a template, and on boot fck-nat attaches
-# that ENI to itself (its config file names the ENI). A dead instance is replaced in a couple of
-# minutes; the ENI, the EIP and the route never change.
+# The private route table points at a *static* network interface (ENI) that carries the Elastic IP,
+# and that ENI is the instance's primary interface. Nothing is attached at boot, so nothing can fail
+# to attach (Incident 26: the first design — a disposable instance in an autoscaling group attaching
+# the ENI on boot — could not reach the EC2 API to do the attaching, because its only public address
+# was on the ENI it had not attached yet). Hardware failure: EC2's simplified automatic recovery
+# restarts the instance on new hardware with the same ENI. Anything else: Terraform re-creates it —
+# a few minutes without egress, and the route never changes.
 
 data "aws_ami" "fck_nat" {
   most_recent = true
@@ -50,7 +52,7 @@ resource "aws_network_interface" "nat" {
 }
 
 resource "aws_eip" "nat" {
-  #checkov:skip=CKV2_AWS_19:The EIP is attached to the static ENI (aws_eip_association), which the disposable instance attaches on boot; checkov only recognises instance attachments
+  #checkov:skip=CKV2_AWS_19:The EIP is attached to the static ENI (aws_eip_association), which is the instance's primary interface; checkov only recognises instance attachments
   domain = "vpc"
   tags   = { Name = "${var.project}-nat" }
 }
@@ -67,9 +69,10 @@ resource "aws_route" "private_default" {
   network_interface_id   = aws_network_interface.nat.id
 }
 
-# ---- the disposable instance ----------------------------------------------------------------------
+# ---- the instance -------------------------------------------------------------------------------
 
-# The instance may attach *its* ENI and nothing else (fck-nat's boot script does the attaching).
+# Session Manager (SSM) is the only way in: no SSH port, no key pair, an audited shell from the AWS
+# console or `aws ssm start-session`. Incident 26 was diagnosed blind because this was missing.
 data "aws_iam_policy_document" "nat_assume" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -85,40 +88,9 @@ resource "aws_iam_role" "nat" {
   assume_role_policy = data.aws_iam_policy_document.nat_assume.json
 }
 
-data "aws_iam_policy_document" "nat_attach_eni" {
-  # AttachNetworkInterface is authorised against both the ENI and the instance: our one ENI, and any
-  # instance tagged as this project's NAT (the tag propagates from the autoscaling group at launch).
-  statement {
-    sid     = "AttachOurEniToOurInstance"
-    actions = ["ec2:AttachNetworkInterface"]
-    resources = [
-      aws_network_interface.nat.arn,
-      "arn:aws:ec2:${var.region}:${data.aws_caller_identity.current.account_id}:instance/*",
-    ]
-    condition {
-      test     = "StringEqualsIfExists"
-      variable = "aws:ResourceTag/Name"
-      values   = ["${var.project}-nat"]
-    }
-  }
-  statement {
-    sid       = "TuneOurEni"
-    actions   = ["ec2:ModifyNetworkInterfaceAttribute"]
-    resources = [aws_network_interface.nat.arn]
-  }
-  statement {
-    sid       = "FindOurEni"
-    actions   = ["ec2:DescribeNetworkInterfaces"] # read-only; Describe* accepts no resource ARN
-    resources = ["*"]
-  }
-}
-
-data "aws_caller_identity" "current" {}
-
-resource "aws_iam_role_policy" "nat" {
-  name   = "attach-the-nat-eni"
-  role   = aws_iam_role.nat.id
-  policy = data.aws_iam_policy_document.nat_attach_eni.json
+resource "aws_iam_role_policy_attachment" "nat_ssm" {
+  role       = aws_iam_role.nat.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
 resource "aws_iam_instance_profile" "nat" {
@@ -126,63 +98,36 @@ resource "aws_iam_instance_profile" "nat" {
   role = aws_iam_role.nat.name
 }
 
-resource "aws_launch_template" "nat" {
-  name_prefix   = "${var.project}-nat-"
-  image_id      = data.aws_ami.fck_nat.id
-  instance_type = var.nat_instance_type
-  iam_instance_profile {
-    name = aws_iam_instance_profile.nat.name
+resource "aws_instance" "nat" {
+  #checkov:skip=CKV_AWS_126:Detailed (1-minute) monitoring costs $2.10/month per instance; 5-minute metrics are enough for a NAT
+  ami                  = data.aws_ami.fck_nat.id
+  instance_type        = var.nat_instance_type
+  ebs_optimized        = true
+  iam_instance_profile = aws_iam_instance_profile.nat.name
+
+  # The static ENI *is* the primary interface: the EIP, the route and the security group all live on it.
+  network_interface {
+    network_interface_id = aws_network_interface.nat.id
+    device_index         = 0
   }
-  network_interfaces {
-    associate_public_ip_address = false # the public address is the EIP on the static ENI, not this one
-    security_groups             = [aws_security_group.nat.id]
-    delete_on_termination       = true
-  }
+
   metadata_options {
     http_tokens                 = "required" # IMDSv2 only
     http_put_response_hop_limit = 1
   }
-  block_device_mappings {
-    device_name = "/dev/xvda"
-    ebs {
-      volume_size = 8
-      volume_type = "gp3"
-      encrypted   = true
-    }
-  }
-  # fck-nat reads /etc/fck-nat.conf on boot: with eni_id set it attaches that ENI and routes through it.
-  user_data = base64encode(<<-EOT
-    #!/bin/bash
-    echo "eni_id=${aws_network_interface.nat.id}" >> /etc/fck-nat.conf
-    systemctl restart fck-nat.service
-  EOT
-  )
-  tag_specifications {
-    resource_type = "instance"
-    tags          = { Name = "${var.project}-nat" }
-  }
-  update_default_version = true
-}
 
-resource "aws_autoscaling_group" "nat" {
-  name                = "${var.project}-nat"
-  min_size            = 1
-  max_size            = 1
-  desired_capacity    = 1
-  vpc_zone_identifier = [aws_subnet.public[0].id] # same subnet as the ENI: an ENI cannot cross subnets
-  launch_template {
-    id      = aws_launch_template.nat.id
-    version = "$Latest"
+  root_block_device {
+    volume_size = 8
+    volume_type = "gp3"
+    encrypted   = true
   }
-  tag {
-    key                 = "Name"
-    value               = "${var.project}-nat"
-    propagate_at_launch = true
+
+  # fck-nat needs no configuration when it NATs through its primary interface; /etc/fck-nat.conf stays empty.
+  tags = { Name = "${var.project}-nat" }
+
+  lifecycle {
+    # A new fck-nat AMI must not replace the door as a side effect of an unrelated apply.
+    # To patch: `terraform apply -replace=aws_instance.nat` through the pipeline, on purpose.
+    ignore_changes = [ami]
   }
-  tag {
-    key                 = "Project"
-    value               = var.project
-    propagate_at_launch = true
-  }
-  depends_on = [aws_eip_association.nat] # the ENI must carry its EIP before the first instance grabs it
 }

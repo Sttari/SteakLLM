@@ -32,3 +32,8 @@ output "nat_eni_id" {
   description = "The static network interface the private route table points at; the NAT instance attaches to it on boot."
   value       = aws_network_interface.nat.id
 }
+
+output "nat_instance_id" {
+  description = "The NAT instance; `aws ssm start-session --target <id>` is the only way onto it."
+  value       = aws_instance.nat.id
+}
