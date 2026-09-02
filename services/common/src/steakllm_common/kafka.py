@@ -5,7 +5,8 @@ still failing, the event is produced unchanged to the retry topic with headers (
 `x-last-error`, `x-origin-topic`) and the offset is committed so the log keeps moving. The same loop
 also consumes the retry topic; after `max_attempts` total the event goes to the dead-letter topic.
 Nothing is dropped
-silently. Offsets are committed after a batch is fully handled. SIGTERM finishes the batch in hand.
+silently. Offsets are committed for what was handled — the batch, or on SIGTERM the record in hand —
+never for what was merely polled (chaos drill 1, docs/chaos/01-embedder-kill.md).
 
 The loop takes its consumer and producer as objects (kafka-python's, or fakes in tests).
 """

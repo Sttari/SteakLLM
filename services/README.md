@@ -1,6 +1,6 @@
 # services — the five workers and what they share
 
-Five services and two libraries, each a `uv` project in the same mould (see `contracts/`). This page is the template every service follows and the policies they all obey. Written before the code (Step 6.1); the code is checked against it.
+Five services and two libraries, each a `uv` project in the same mould (see `contracts/`). This page is the template every service follows and the policies they all obey. Written before the code (Step 6.1) and checked against it at the end (6.13); the two places where the drill changed the policy are marked *amended*. The reasoning is ADR-0006.
 
 | Project | Kind | Reads | Writes |
 |---|---|---|---|
@@ -37,11 +37,11 @@ Entry points are console scripts (`steakllm-embedder`, …) declared in `pyproje
 {"ts":"2026-09-02T20:18:17Z","level":"info","service":"embedder","msg":"indexed","event_id":"…","event_type":"DocumentUploaded","doc_id":"4bc3…","trace_id":"4bf9…","chunk_count":5,"ms":812}
 ```
 
-**Consumers.** Consumer groups are `steakllm-<service>` — three groups on `documents` means three independent readers, each seeing every event at its own pace. Handlers are idempotent by construction (upsert by `doc_id` / `point_id`; dedupe on `event_id` where a side effect cannot be upserted — the notifier). Offsets are committed after a batch is fully handled, never before. Unknown event types are skipped and logged, never failed (a tolerant reader).
+**Consumers.** Consumer groups are `steakllm-<service>` — three groups on `documents` means three independent readers, each seeing every event at its own pace. Handlers are idempotent by construction (upsert by `doc_id` / `point_id`; dedupe on `event_id` where a side effect cannot be upserted — the notifier). Offsets are committed for exactly the records that were handled — after the batch, or after the record in hand on a stop — never for what was merely polled (*amended*, Incident 24). Unknown event types are skipped and logged, never failed (a tolerant reader). Ingest, the producer of `DocumentUploaded`, does not announce an object twice under the same key: S3 notifications and the local watcher are both at-least-once, and a duplicate that never enters the log costs no one anything (*amended*, Incident 25).
 
 **Retry and dead-letter.** A handler failure is retried in place up to **3 times** with backoff (1 s, 4 s, 16 s). Still failing → the event is produced unchanged to `documents.retry` with headers `x-attempts`, `x-last-error`, `x-origin-topic`, and the offset is committed (the log keeps moving). A separate retry pass consumes `documents.retry` with the same handler; after **3 more** failures the event goes to `documents.dlq` with the same headers, and an alert fires (Step 11). Nothing is ever dropped silently; the DLQ is a queue for humans.
 
-**Shutdown.** `SIGTERM` → stop taking new batches, finish the batch in hand, commit offsets, close clients, exit 0 — within 20 s (Kubernetes waits 30). `SIGINT` (Ctrl-C locally) does the same. A second signal exits immediately.
+**Shutdown.** `SIGTERM` → finish the *record* in hand (not the batch: fifty documents at 4 s each would outlive any grace period), commit the offsets of what was handled, close clients — which tells Kafka to reassign the partitions at once — and exit 0, in a few seconds (Compose and Kubernetes both wait 30). `SIGINT` (Ctrl-C locally) does the same. A second signal exits immediately. A hard kill costs the session timeout, 10 s, before the group rebalances (*amended*, chaos drill 1).
 
 **Probes.** Every service serves `GET /healthz` (process alive; 200 always once started) and `GET /readyz` (200 only when its dependencies answer: Kafka metadata, Qdrant, the catalog, …). Consumers run a tiny HTTP server for this on port 8080. Kubernetes' liveness → `/healthz`, readiness → `/readyz`.
 
