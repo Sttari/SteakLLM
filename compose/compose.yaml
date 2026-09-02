@@ -96,7 +96,64 @@ services:
       timeout: 3s
       retries: 12
 
+  # ---- Kafka: the logbook. One node is controller + broker (KRaft; no ZooKeeper), as Strimzi will run it.
+  kafka:
+    image: apache/kafka:4.3.1
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      # Two doors: PLAINTEXT for containers (kafka:19092), EXTERNAL for the Mac (localhost:9092).
+      # Kafka tells clients where to reconnect, so each advertised address must be reachable from where that client lives.
+      KAFKA_LISTENERS: PLAINTEXT://:19092,CONTROLLER://:9093,EXTERNAL://:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:19092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      # Single node: every replication factor is 1.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # Topics are contracts, declared by kafka-init; nothing may create one as a side effect.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data # exists in the image owned by appuser, so the volume inherits it
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      # a real metadata request to the broker, not a port probe (Incident 14)
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:19092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 8s
+      retries: 12
+      start_period: 20s
+
+  # One-shot: declare the four topics from the contracts (idempotent), then list them.
+  kafka-init:
+    image: apache/kafka:4.3.1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        t=/opt/kafka/bin/kafka-topics.sh; b=kafka:19092
+        $$t --bootstrap-server $$b --create --if-not-exists --topic "$$TOPIC_DOCUMENTS"       --partitions 3 --replication-factor 1
+        $$t --bootstrap-server $$b --create --if-not-exists --topic "$$TOPIC_DOCUMENTS_RETRY" --partitions 1 --replication-factor 1
+        $$t --bootstrap-server $$b --create --if-not-exists --topic "$$TOPIC_DOCUMENTS_DLQ"   --partitions 1 --replication-factor 1
+        $$t --bootstrap-server $$b --create --if-not-exists --topic "$$TOPIC_CHATS"           --partitions 3 --replication-factor 1
+        echo "topics ready:"; $$t --bootstrap-server $$b --list
+    environment:
+      TOPIC_DOCUMENTS: ${TOPIC_DOCUMENTS}
+      TOPIC_DOCUMENTS_RETRY: ${TOPIC_DOCUMENTS_RETRY}
+      TOPIC_DOCUMENTS_DLQ: ${TOPIC_DOCUMENTS_DLQ}
+      TOPIC_CHATS: ${TOPIC_CHATS}
+
 volumes:
   minio-data:
   dynamodb-data:
   qdrant-data:
+  kafka-data:
