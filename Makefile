@@ -40,5 +40,5 @@ ps: ## show the stack's services and health
 logs: ## follow the stack's logs (SERVICE=name for one service)
 	$(COMPOSE) logs -f $(SERVICE)
 
-demo: ## drop the sample document into the local stack and drive it to searchable + summarized (Step 5.8)
-	@echo "not yet"
+demo: ## drive the sample PDF through the stack by hand: MinIO → Kafka → Ollama → Qdrant → Bedrock → catalog
+	uv run compose/demo.py
