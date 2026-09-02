@@ -1,24 +1,24 @@
-# steakllm-summarizer — consumes DocumentUploaded: text → gateway (llm) → summary + tags → catalog → SummaryReady.
+# steakllm-notifier — consumes SummaryReady: watch-list match → one notification per event, never twice.
 [project]
-name = "steakllm-summarizer"
+name = "steakllm-notifier"
 version = "0.1.0"
-description = "SteakLLM summarizer: asks the gateway for a summary and tags, writes them to the catalog"
+description = "SteakLLM notifier: SummaryReady × watch-list → stdout locally, SNS in the cloud"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
   "steakllm-contracts",
   "steakllm-common",
-  "httpx>=0.27",
 ]
 
 [project.scripts]
-steakllm-summarizer = "steakllm_summarizer.main:cli"
+steakllm-notifier = "steakllm_notifier.main:cli"
 
 [dependency-groups]
 dev = [
   "pytest>=8",
   "ruff>=0.16",
+  "moto[dynamodb,sns]>=5.0",
 ]
 
 [tool.uv.sources]
@@ -30,7 +30,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/steakllm_summarizer"]
+packages = ["src/steakllm_notifier"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -63,6 +63,14 @@ class Settings(BaseSettings):
     summarizer_max_chars: int = 6000  # prompt budget: the first N characters of the document
     summarizer_prefer_vllm_seconds: int = 600  # hint to the gateway: wait this long for vLLM
 
+    # Notifier
+    watch_list: list[str] = [
+        "finance",
+        "quarterly-report",
+    ]  # terms matched against tags and summary
+    notify_sink: str = "stdout"  # "stdout" locally, "sns" in the cloud
+    sns_topic_arn: str | None = None
+
     # Probes
     probe_port: int = 8080
 

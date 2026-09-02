@@ -17,7 +17,7 @@ Five services and two libraries, each a `uv` project in the same mould (see `con
 ```
 services/<name>/
 ├── pyproject.toml         name steakllm-<name>; requires-python >=3.12; deps + [dependency-groups] dev;
-│                          [tool.uv.sources] steakllm-contracts / steakllm-common = { path = "../…" }
+│                          [tool.uv.sources] steakllm-contracts / -common = { path = "../…", editable = true }
 ├── .python-version        3.12
 ├── uv.lock                committed
 ├── Dockerfile             multi-stage: uv build stage → python:3.12-slim runtime, USER app, HEALTHCHECK
@@ -47,7 +47,7 @@ Entry points are console scripts (`steakllm-embedder`, …) declared in `pyproje
 
 **Errors and limits.** Uploads: 20 MB and `application/pdf`, `text/markdown`, `text/plain` only, enforced by ingest (rejected → `rejected/` prefix, `DocumentDeleted` with `quarantine_rejected`). Per-key quotas in the gateway: requests per minute and tokens per day; over → `429` with `Retry-After`.
 
-**Tests.** `uv run pytest` runs unit tests only. After changing `common` or `contracts`, re-sync each consumer with `uv sync --reinstall-package steakllm-common --reinstall-package steakllm-contracts` — path dependencies are built snapshots, not links (field notes, Incident 19). Integration tests are marked `@pytest.mark.integration`, need `make up`, and run with `uv run pytest -m integration`. CI runs both (the stack boots on the runner in Step 6.10).
+**Tests.** `uv run pytest` runs unit tests only. Path dependencies on `contracts` and `common` are **editable** (`editable = true` in `[tool.uv.sources]`, in every consumer and in `common` itself), so a change in a shared library is live in every service without re-syncing (field notes, Incident 19). Integration tests are marked `@pytest.mark.integration`, need `make up`, and run with `uv run pytest -m integration`. CI runs both (the stack boots on the runner in Step 6.10).
 
 ## The routing policy (the gateway)
 

@@ -145,8 +145,8 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 **Incident 19 — `'Settings' object has no attribute 'summarizer_max_chars'` in a venv that had the field in source** (Sep 2 2026, Step 6.5)
 *Symptom:* the summarizer's tests failed on a field that plainly exists in `services/common/src/…/settings.py`.
 *Cause:* `steakllm-common` is a *path* dependency, which `uv` builds into a wheel and installs at sync time — not an editable link. The summarizer had synced before the field was added, so its venv carried the old build. Every service venv synced earlier (ingest, embedder) has the same stale copy.
-*Fix:* `uv sync --reinstall-package steakllm-common` (and `steakllm-contracts`) in the service after changing a shared library; documented in `services/README.md`. CI is immune (it syncs fresh every run).
-*Lesson:* a path dependency is a snapshot, not a symlink. When a shared library changes, re-sync its consumers — or the tests test yesterday's library.
+*Fix (final):* `editable = true` on every path source (`[tool.uv.sources] steakllm-common = { path = "../common", editable = true }`), including inside `common` itself for `contracts` — `uv` refuses two different URLs for one package, so all declarations must agree. Editable installs link the source directory; changes are visible everywhere immediately. (First fix, superseded: `uv sync --reinstall-package …`.)
+*Lesson:* a plain path dependency is a built snapshot and `uv` caches the build; in a monorepo of shared libraries, path sources must be editable or the tests test yesterday's library.
 
 **Open item — Ollama image is 6.98 GB** (Sep 2 2026, Step 5.5)
 `ollama/ollama:0.33.2` bundles GPU runtimes we never use on CPU. Fine on the laptop; on the Graviton node (Step 8) a 7 GB pull costs minutes and root-volume space. The `/v1/embeddings` contract makes the server swappable: candidate replacement is a self-built ~400 MB ONNX container serving `BAAI/bge-small-en-v1.5` (arm64 + amd64). Decide at Step 8; record in ADR-0005 as a known trade-off.

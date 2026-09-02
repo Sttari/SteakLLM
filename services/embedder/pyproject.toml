@@ -21,8 +21,8 @@ dev = [
 ]
 
 [tool.uv.sources]
-steakllm-contracts = { path = "../contracts" }
-steakllm-common = { path = "../common" }
+steakllm-contracts = { path = "../contracts", editable = true }
+steakllm-common = { path = "../common", editable = true }
 
 [build-system]
 requires = ["hatchling"]
