@@ -22,3 +22,5 @@ Date: YYYY-MM-DD
 | [0004](0004-event-contracts.md) | Event contracts as JSON Schema, versioned by file, additive-only, enforced by a golden-file test; identity rules as code |
 | [0005](0005-local-dev-stack.md) | Local dev stack: Compose with protocol-faithful stand-ins (MinIO, DynamoDB Local, KRaft Kafka, Qdrant, Bedrock); Ollama for embeddings |
 | [0006](0006-services-shape-and-consumer-policy.md) | Five `uv` projects and one shared library (no workspace); retry → `documents.retry` → `documents.dlq`; consumers idempotent by construction, facts over a status word |
+| [0007](0007-nat-instance.md) | Egress through a $3 NAT instance (fck-nat) instead of a $33 NAT gateway; free gateway endpoints for S3 and DynamoDB |
+| [0008](0008-one-spot-node-and-how-argo-arrives.md) | One spot t4g.large in a managed node group; cluster API reachable from one `/32` until the tailnet; Argo CD bootstrapped once by hand, then self-managed |
