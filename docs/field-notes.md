@@ -18,6 +18,9 @@ Running log of the environment, every incident (cause → fix → lesson), and e
 | Dependabot | version updates weekly (`.github/dependabot.yml`); alerts + security updates enabled by hand Aug 28 2026 (`gh api -X PUT …/vulnerability-alerts`, `…/automated-security-fixes`) — private repos don't get them by default |
 | CI/CD (Step 3) | `ci.yml` — gitleaks · terraform fmt/validate · tflint · checkov · ruff, required on `main` (strict) · `plan.yml` — plan role via OIDC, sticky comment per module on infra PRs · `apply.yml` — `production` environment (owner approves, protected branches only), apply role, per-module queue; bootstrap excluded · `release.yml` deferred to Step 6 |
 | Contracts (Step 4) | `services/contracts` — package `steakllm-contracts` (uv, src layout, Python 3.12): envelope + 5 event schemas (JSON Schema 2020-12), examples, `ids.doc_id`/`ids.point_id`, golden-file compatibility test; 38 tests; `pytest` required in CI |
+| Local stack preflight (5.1, Sep 2 2026) | Mac: `arm64`, 16 GB RAM; ports 9092/9000/9001/8000/6333/8080/8081/3000 all free. Docker: CLI only at first (Incident 13) → **OrbStack 2.2.3**: engine 29.4.0, aarch64, 8 CPUs, 7.8 GB for containers, Compose v5.1.2. arm64 images: kafka ✓ minio ✓ dynamodb-local ✓ qdrant ✓ open-webui ✓ nginx ✓; **TEI: amd64 only on every tag** (cpu-1.6/1.7/1.8/latest) — and the cluster's CPU node is Graviton (`t4g`), so this is a cluster problem too, not just a laptop one. Bedrock models visible: `amazon.nova-micro-v1:0` (on-demand), `amazon.nova-lite-v1:0` (on-demand), `anthropic.claude-3-haiku-20240307-v1:0` (on-demand), `anthropic.claude-haiku-4-5-20251001-v1:0` (inference profile) |
+| Bedrock (5.6, Sep 2 2026) | model `amazon.nova-micro-v1:0` via the Converse API, region us-east-1, no access request needed (auto-granted); ~$0.035/M input, $0.14/M output tokens. First call: 'ready'. Fallback if summaries disappoint: `anthropic.claude-3-haiku-20240307-v1:0` (~$0.25/$1.25) |
+| Local stack images (5.9, all arm64) | `minio/minio:RELEASE.2025-09-07T16-13-09Z` · `minio/mc:RELEASE.2025-08-13T08-35-41Z` · `amazon/dynamodb-local:3.3.1` · `amazon/aws-cli:2.36.37` · `qdrant/qdrant:v1.19.0` · `apache/kafka:4.3.1` · `ollama/ollama:0.33.2` (6.98 GB) · `nginx:1.31.4-alpine` · `ghcr.io/open-webui/open-webui:v0.11.3` (6.47 GB). Engine: OrbStack 2.2.3 |
 | Pre-commit hooks | gitleaks · detect-private-key · detect-aws-credentials · large-files · yaml/json · end-of-file · trailing-whitespace · terraform_fmt · ruff · ruff-format |
 
 ## 2. Decisions
@@ -29,6 +32,7 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 | Aug 28 2026 | Ollama dropped from local dev; Bedrock is the only local backend, vLLM lands at Step 9 | The Mac can't run vLLM; both backends speak the same OpenAI contract, so services don't change |
 | Aug 28 2026 | Repo private until Step 12 | Preference. Branch protection turned out to work on the private repo anyway (see Incident 4) |
 | Sep 1 2026 | `release.yml` deferred from Step 3 to Step 6 | A build workflow with nothing to build proves nothing; it lands with the services and Dockerfiles it builds (ADR-0003) |
+| Sep 2 2026 | Embedding server is **Ollama**, not TEI; contract = OpenAI `/v1/embeddings` | TEI has no arm64 image on any tag and the cluster's CPU node is Graviton; Ollama is arm64-native on both laptop and cluster. Decided Step 5.1; ADR-0005 |
 | Sep 1 2026 | **Repo public from Step 3.5** (supersedes the above) | Environment protection rules (the human apply gate) are free only on public repos (Incident 11). Pre-flight: full-history gitleaks clean, `budget_email` marked sensitive, personal addresses scrubbed from prose. Alternatives rejected: GitHub Pro ($4/mo) for a feature the public path gives free; dropping the gate |
 
 ## 3. Incident log
@@ -101,10 +105,39 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 *Fix:* created every item 1.6 lists (directories with one-line READMEs, root files, `Makefile` with stub targets) during 4.1; re-verified with `tree`.
 *Lesson:* second time this pattern bit (see Incident 6). Before ticking any box, run the *Done when* command and look at its output — a tick is a claim, the output is the evidence. And git will silently drop an empty folder; a README stub is what keeps a room on the map.
 
+**Incident 13 — no Docker daemon: 1.2's "install Docker Desktop or OrbStack" was ticked but never done** (Sep 2 2026, Step 5.1)
+*Symptom:* `docker info` → `failed to connect to the docker API at unix:///var/run/docker.sock`; `docker compose version` → plugin not found. `docker --version` had printed 29.7.2 in 1.2, which satisfied the *Done when* as written.
+*Cause:* Homebrew's `docker` *formula* is the command-line client only. A daemon (Docker Desktop, OrbStack, or Colima) is a separate install; nothing in 1.2's check exercised the daemon.
+*Fix:* `brew install --cask orbstack` (2.2.3) + first launch. Verified: engine 29.4.0 on aarch64, 8 CPUs, 7.8 GB for containers, Compose v5.1.2, context `orbstack`.
+*Lesson:* third ticked-but-not-met box (Incidents 6, 12). "Prints a version" proves a binary exists, not that the thing works — check the *capability* (`docker info`), not the label.
+
+**Incident 14 — DynamoDB Local "healthy" but every request hung: root-owned volume** (Sep 2 2026, Step 5.3)
+*Symptom:* `aws dynamodb list-tables` from the Mac → `Read timeout on endpoint URL`; `dynamodb-init` stuck for minutes; Compose reported the service `healthy`.
+*Cause:* the image runs as `dynamodblocal` (uid 1000); Docker creates named volumes root-owned (`drwxr-xr-x root`), so SQLite logged `[14] unable to open database file` and the engine hung on every call instead of failing. The healthcheck accepted "any HTTP status" — the JSON front door answered 400 while the engine behind it was dead.
+*Fix:* `user: root` on the service (a laptop stand-in; documented in the compose file), and a healthcheck that makes a real `ListTables` call and expects `TableNames` within 2 s. Re-ran the init: `catalog` ACTIVE.
+*Lesson:* a healthcheck must exercise the thing you depend on, not the port in front of it. And read the container's own log before the client's error — the cause was on line 10 of `docker compose logs`. Also: the five storage images total 2.1 GB, not the ~600 MB estimated (DynamoDB Local 809 MB, aws-cli 668 MB). Whole stack on disk after 5.7: ~16 GB (Ollama 6.98 GB, Open WebUI 6.47 GB, Kafka 692 MB).
+
+**Incident 15 — the stub answered 503 to the Mac but its own healthcheck said "connection refused"** (Sep 2 2026, Step 5.5)
+*Symptom:* `curl -i localhost:8081/health` from the Mac → `503` as designed; Compose marked `vllm-stub` *unhealthy*.
+*Cause:* inside the container `localhost` resolves to `::1` (IPv6) and nginx listens on IPv4 only, so the healthcheck's `wget` could not connect. The Mac's request arrives through Docker's published port on IPv4 and never sees the difference.
+*Fix:* healthcheck targets `127.0.0.1` explicitly. Verified in-container (exit 0) before recreating.
+*Lesson:* an address must be right for where the *caller* lives — the same rule as Kafka's advertised listeners. In healthchecks, write `127.0.0.1`, never `localhost`.
+
+**Incident 16 — `docker compose up --wait` exits 1 because an init container "exited (0)"** (Sep 2 2026, Step 5.7)
+*Symptom:* `make up` returned exit 2 after 8 s with Open WebUI still `health: starting`; the raw Compose output ended with `container steakllm-minio-init-1 exited (0)`.
+*Cause:* `--wait` treats *any* container that stops as a failure, even a one-shot that finished successfully. It was designed for long-running services; our four init containers are exactly the case it does not handle.
+*Fix:* two-phase `make up`: `up -d --wait` on the seven long-running services (nothing depends on the inits, so they don't start), then `up -d` the inits and `docker compose wait` on them, which returns their real exit codes. 17 s to fully healthy; exit 0.
+*Lesson:* when a tool's exit code disagrees with what you can see (`ps` said healthy), read the tool's last line before the tool's flag. And measure: "up took 8 s" was the tell — too fast for a 30 s start_period.
+
+**Open item — Ollama image is 6.98 GB** (Sep 2 2026, Step 5.5)
+`ollama/ollama:0.33.2` bundles GPU runtimes we never use on CPU. Fine on the laptop; on the Graviton node (Step 8) a 7 GB pull costs minutes and root-volume space. The `/v1/embeddings` contract makes the server swappable: candidate replacement is a self-built ~400 MB ONNX container serving `BAAI/bge-small-en-v1.5` (arm64 + amd64). Decide at Step 8; record in ADR-0005 as a known trade-off.
+
 **Open item — Dependabot's `uv in /services/*` job fails** (first seen Aug 31 2026; expected resolved Sep 1 2026)
 The weekly "Dependabot Updates" run errored on the `uv` ecosystem because `services/*` had no Python manifests. `services/contracts` now has `pyproject.toml` + `uv.lock` (Step 4.2). *Verify on the next Monday run (Sep 7 2026); if it still fails, diagnose and record the fix here.*
 
 ## 4. Measurements
+
+Local stack (Step 5, Sep 2 2026): `make up` to fully healthy **17 s** (warm volumes); RAM at rest **~1.5 GB** (Open WebUI 666 MB, Kafka 359 MB, DynamoDB Local 208 MB, the rest < 100 MB each); disk ~16 GB of images. `make demo`: **12 s** first run, **7 s** second; Bedrock (Nova Micro) 0.8 s, 432 in / 95 out tokens ≈ $0.00003; 1,569-char PDF → 5 chunks → 5 × 384-dim vectors; idempotency: run 2 left 5 points / 1 catalog row unchanged while the topic went 3 → 6 events.
 
 First pipeline apply: **2026-09-01T20:18:17Z** — `infra/ecr`, 10 resources, by `assumed-role/steakllm-ci-apply` (CloudTrail), ~5 s of apply after the approval click; run 33554383123. From Step 7: rebuild time (`terraform destroy` → `apply`). From Step 9: GPU summon-to-`/health` time, idle-to-removed time, the load-test table (c=1/8/32). From Step 10: upload-to-searchable and upload-to-email latency, drill results. From Step 11: tokens per GPU-hour and $/Mtok beside Bedrock.
 
