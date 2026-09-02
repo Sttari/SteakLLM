@@ -18,6 +18,7 @@ Running log of the environment, every incident (cause → fix → lesson), and e
 | Dependabot | version updates weekly (`.github/dependabot.yml`); alerts + security updates enabled by hand Aug 28 2026 (`gh api -X PUT …/vulnerability-alerts`, `…/automated-security-fixes`) — private repos don't get them by default |
 | CI/CD (Step 3) | `ci.yml` — gitleaks · terraform fmt/validate · tflint · checkov · ruff, required on `main` (strict) · `plan.yml` — plan role via OIDC, sticky comment per module on infra PRs · `apply.yml` — `production` environment (owner approves, protected branches only), apply role, per-module queue; bootstrap excluded · `release.yml` deferred to Step 6 |
 | Contracts (Step 4) | `services/contracts` — package `steakllm-contracts` (uv, src layout, Python 3.12): envelope + 5 event schemas (JSON Schema 2020-12), examples, `ids.doc_id`/`ids.point_id`, golden-file compatibility test; 38 tests; `pytest` required in CI |
+| Local stack preflight (5.1, Sep 2 2026) | Mac: `arm64`, 16 GB RAM; ports 9092/9000/9001/8000/6333/8080/8081/3000 all free. Docker: CLI only at first (Incident 13) → **OrbStack 2.2.3**: engine 29.4.0, aarch64, 8 CPUs, 7.8 GB for containers, Compose v5.1.2. arm64 images: kafka ✓ minio ✓ dynamodb-local ✓ qdrant ✓ open-webui ✓ nginx ✓; **TEI: amd64 only on every tag** (cpu-1.6/1.7/1.8/latest) — and the cluster's CPU node is Graviton (`t4g`), so this is a cluster problem too, not just a laptop one. Bedrock models visible: `amazon.nova-micro-v1:0` (on-demand), `amazon.nova-lite-v1:0` (on-demand), `anthropic.claude-3-haiku-20240307-v1:0` (on-demand), `anthropic.claude-haiku-4-5-20251001-v1:0` (inference profile) |
 | Pre-commit hooks | gitleaks · detect-private-key · detect-aws-credentials · large-files · yaml/json · end-of-file · trailing-whitespace · terraform_fmt · ruff · ruff-format |
 
 ## 2. Decisions
@@ -29,6 +30,7 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 | Aug 28 2026 | Ollama dropped from local dev; Bedrock is the only local backend, vLLM lands at Step 9 | The Mac can't run vLLM; both backends speak the same OpenAI contract, so services don't change |
 | Aug 28 2026 | Repo private until Step 12 | Preference. Branch protection turned out to work on the private repo anyway (see Incident 4) |
 | Sep 1 2026 | `release.yml` deferred from Step 3 to Step 6 | A build workflow with nothing to build proves nothing; it lands with the services and Dockerfiles it builds (ADR-0003) |
+| Sep 2 2026 | Embedding server is **Ollama**, not TEI; contract = OpenAI `/v1/embeddings` | TEI has no arm64 image on any tag and the cluster's CPU node is Graviton; Ollama is arm64-native on both laptop and cluster. Decided Step 5.1; ADR-0005 |
 | Sep 1 2026 | **Repo public from Step 3.5** (supersedes the above) | Environment protection rules (the human apply gate) are free only on public repos (Incident 11). Pre-flight: full-history gitleaks clean, `budget_email` marked sensitive, personal addresses scrubbed from prose. Alternatives rejected: GitHub Pro ($4/mo) for a feature the public path gives free; dropping the gate |
 
 ## 3. Incident log
@@ -100,6 +102,12 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 *Cause:* 1.6 was ticked from memory, not from `tree -L 2`. Git stores no empty directories, so even folders made by hand without a file inside vanish from history.
 *Fix:* created every item 1.6 lists (directories with one-line READMEs, root files, `Makefile` with stub targets) during 4.1; re-verified with `tree`.
 *Lesson:* second time this pattern bit (see Incident 6). Before ticking any box, run the *Done when* command and look at its output — a tick is a claim, the output is the evidence. And git will silently drop an empty folder; a README stub is what keeps a room on the map.
+
+**Incident 13 — no Docker daemon: 1.2's "install Docker Desktop or OrbStack" was ticked but never done** (Sep 2 2026, Step 5.1)
+*Symptom:* `docker info` → `failed to connect to the docker API at unix:///var/run/docker.sock`; `docker compose version` → plugin not found. `docker --version` had printed 29.7.2 in 1.2, which satisfied the *Done when* as written.
+*Cause:* Homebrew's `docker` *formula* is the command-line client only. A daemon (Docker Desktop, OrbStack, or Colima) is a separate install; nothing in 1.2's check exercised the daemon.
+*Fix:* `brew install --cask orbstack` (2.2.3) + first launch. Verified: engine 29.4.0 on aarch64, 8 CPUs, 7.8 GB for containers, Compose v5.1.2, context `orbstack`.
+*Lesson:* third ticked-but-not-met box (Incidents 6, 12). "Prints a version" proves a binary exists, not that the thing works — check the *capability* (`docker info`), not the label.
 
 **Open item — Dependabot's `uv in /services/*` job fails** (first seen Aug 31 2026; expected resolved Sep 1 2026)
 The weekly "Dependabot Updates" run errored on the `uv` ecosystem because `services/*` had no Python manifests. `services/contracts` now has `pyproject.toml` + `uv.lock` (Step 4.2). *Verify on the next Monday run (Sep 7 2026); if it still fails, diagnose and record the fix here.*
