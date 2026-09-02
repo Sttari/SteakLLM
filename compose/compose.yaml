@@ -49,7 +49,7 @@ services:
     # cannot open its file and every request hangs (Incident 14). Root is acceptable for a laptop stand-in.
     user: root
     ports:
-      - "8000:8000"
+      - "8001:8000" # 8001 on the Mac: 8000 belongs to the gateway (Incident 20)
     volumes:
       - dynamodb-data:/home/dynamodblocal/data
     healthcheck:
@@ -211,7 +211,7 @@ services:
     volumes:
       - open-webui-data:/app/backend/data
     environment:
-      OPENAI_API_BASE_URL: ${GATEWAY_URL}
+      OPENAI_API_BASE_URL: ${OPEN_WEBUI_GATEWAY_URL}
       OPENAI_API_KEY: ${GATEWAY_API_KEY}
       ENABLE_OLLAMA_API: "false" # no side door to the embedding server; chat goes through the gateway
       WEBUI_AUTH: "false" # laptop only; in the cluster the tailnet is the door

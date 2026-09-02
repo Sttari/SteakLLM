@@ -16,7 +16,7 @@ Copy `.env.example` to `.env` first and fill in `AWS_PROFILE`. Needs a Docker en
 | Service | Stands in for | Port on the Mac | Note |
 |---|---|---|---|
 | `minio` (+ `minio-init`) | S3 | 9000 API, 9001 console | same API; only the endpoint differs. Bucket created by the init |
-| `dynamodb` (+ `dynamodb-init`) | DynamoDB | 8000 | Amazon's local build; `catalog` table created by the init |
+| `dynamodb` (+ `dynamodb-init`) | DynamoDB | 8001 (8000 is the gateway's) | Amazon's local build; `catalog` table created by the init |
 | `kafka` (+ `kafka-init`) | Strimzi Kafka | 9092 | single node, KRaft; topics `documents`, `documents.retry`, `documents.dlq`, `chats` declared by the init; auto-create off |
 | `qdrant` | Qdrant | 6333 REST, 6334 gRPC | the real thing |
 | `ollama` (+ `ollama-init`) | the embedding server | 11434 | `all-minilm`, 384 dims, behind `/v1/embeddings`; weights cached in a volume |

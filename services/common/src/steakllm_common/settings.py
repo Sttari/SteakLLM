@@ -71,6 +71,15 @@ class Settings(BaseSettings):
     notify_sink: str = "stdout"  # "stdout" locally, "sns" in the cloud
     sns_topic_arn: str | None = None
 
+    # Gateway (server side)
+    gateway_port: int = 8000
+    gateway_api_keys: list[str] = []  # extra accepted keys; gateway_api_key is always accepted
+    vllm_probe_timeout_seconds: float = 0.3
+    vllm_probe_cache_seconds: float = 2.0
+    breaker_failures: int = 3
+    breaker_open_seconds: float = 60.0
+    chat_max_tokens_cap: int = 2048
+
     # Probes
     probe_port: int = 8080
 

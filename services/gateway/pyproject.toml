@@ -1,0 +1,47 @@
+# steakllm-gateway — the front desk: OpenAI /v1 contract, routing policy with circuit breaker, ChatCompleted.
+[project]
+name = "steakllm-gateway"
+version = "0.1.0"
+description = "SteakLLM gateway: OpenAI-compatible /v1, vLLM-or-Bedrock routing with a circuit breaker"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+  "steakllm-contracts",
+  "steakllm-common",
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "httpx>=0.27",
+]
+
+[project.scripts]
+steakllm-gateway = "steakllm_gateway.main:cli"
+
+[dependency-groups]
+dev = [
+  "pytest>=8",
+  "ruff>=0.16",
+]
+
+[tool.uv.sources]
+steakllm-contracts = { path = "../contracts", editable = true }
+steakllm-common = { path = "../common", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/steakllm_gateway"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q -m 'not integration'"
+markers = ["integration: needs the local stack (make up) and Bedrock"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "BLE", "N"]
