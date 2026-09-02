@@ -26,3 +26,7 @@ Nodes live in private subnets with no route from the internet, but they must rea
 - Throughput is bounded by a t4g.nano (up to 5 Gbps burst, far above need). If Step 9's weights ever bypass the S3 endpoint this must be revisited.
 - The one public IPv4 costs more than the instance. When IPv6 egress is practical for every dependency, drop it.
 - The instance is a real EC2 host in our VPC: it gets patched by replacement (new AMI → new instance), never by hand.
+
+## Amendment (Sep 2 2026, Incident 26) — a plain instance, not an autoscaling group
+
+The first apply used an autoscaling group of one whose instance attached the static ENI on boot (fck-nat's `eni_id` mode). It never attached: the instance's own interface had no public address by design, and the only public address was on the ENI it had not attached yet, so its call to the EC2 API could not leave the VPC. The fix that keeps the cost and removes the loop: the static ENI (with the Elastic IP) is the instance's *primary* interface, created and attached by Terraform; nothing happens at boot. Replacement is EC2's automatic recovery for hardware faults and a deliberate `-replace` through the pipeline for everything else. The autoscaling alternative would need a second public IPv4 on the instance's own interface ($3.65/month) or an EC2 interface endpoint (~$7/month) — both more than the door itself. Session Manager access was added at the same time so the next fault is diagnosed from the instance, not from CloudTrail's silence.
