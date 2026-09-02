@@ -1,0 +1,5 @@
+# The local dev stack: protocol-faithful stand-ins for the cloud (Step 5). Run via `make up`, which
+# passes `--env-file .env` from the repo root so one .env serves Compose and the services alike.
+name: ${COMPOSE_PROJECT_NAME:-steakllm}
+
+services: {} # filled in 5.3 (storage), 5.4 (Kafka), 5.5 (Ollama + stub), 5.7 (Open WebUI)
