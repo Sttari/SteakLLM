@@ -93,7 +93,7 @@ def test_same_bytes_twice_is_the_same_document(deps):
     assert deps.table.scan(Select="COUNT")["Count"] == 1  # one row, not two
 
 
-def test_redelivery_never_regresses_an_indexed_document(deps):
+def test_redelivery_of_the_same_key_is_recorded_once_and_announced_once(deps):
     put(deps, "quarantine/a.txt", b"hello")
     (ev,) = handle(s3_record(BUCKET, "quarantine/a.txt"), deps)
     deps.table.update_item(
@@ -102,9 +102,9 @@ def test_redelivery_never_regresses_an_indexed_document(deps):
         ExpressionAttributeNames={"#s": "status"},
         ExpressionAttributeValues={":s": "indexed"},
     )
-    handle(s3_record(BUCKET, "quarantine/a.txt"), deps)  # S3 delivered the event again
+    again = handle(s3_record(BUCKET, "quarantine/a.txt"), deps)  # S3 delivered the event again
     assert deps.table.get_item(Key={"doc_id": ev["doc_id"]})["Item"]["status"] == "indexed"
-    assert len(deps.producer.sent) == 2  # the event is re-emitted; consumers are idempotent
+    assert again == [] and len(deps.producer.sent) == 1  # not re-announced: no second index run
 
 
 def test_too_large_is_rejected_moved_and_announced(deps):

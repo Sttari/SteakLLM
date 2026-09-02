@@ -117,24 +117,34 @@ def _created(rec: S3Record, deps: Deps, trace: str) -> dict[str, Any] | None:
     with bound(doc_id=doc):
         if reason:
             return _reject(rec, deps, doc, trace, reason)
-        deps.table.update_item(
-            Key={"doc_id": doc},
-            # never regress a document that is already indexed/summarized (at-least-once delivery)
-            UpdateExpression=(
-                "SET #s = if_not_exists(#s, :uploaded), #k = :k, size_bytes = :sz, "
-                "content_type = :ct, trace_id = :tr, updated_at = :now, "
-                "uploaded_at = if_not_exists(uploaded_at, :now)"
-            ),
-            ExpressionAttributeNames={"#s": "status", "#k": "key"},
-            ExpressionAttributeValues={
-                ":uploaded": "uploaded",
-                ":k": rec.key,
-                ":sz": size,
-                ":ct": ctype,
-                ":tr": trace,
-                ":now": deps.now(),
-            },
+        old = (
+            deps.table.update_item(
+                Key={"doc_id": doc},
+                # never regress a document already indexed/summarized (at-least-once delivery)
+                UpdateExpression=(
+                    "SET #s = if_not_exists(#s, :uploaded), #k = :k, size_bytes = :sz, "
+                    "content_type = :ct, trace_id = :tr, updated_at = :now, "
+                    "uploaded_at = if_not_exists(uploaded_at, :now)"
+                ),
+                ExpressionAttributeNames={"#s": "status", "#k": "key"},
+                ExpressionAttributeValues={
+                    ":uploaded": "uploaded",
+                    ":k": rec.key,
+                    ":sz": size,
+                    ":ct": ctype,
+                    ":tr": trace,
+                    ":now": deps.now(),
+                },
+                ReturnValues="ALL_OLD",
+            ).get("Attributes")
+            or {}
         )
+        if old.get("key") == rec.key and old.get("status") in ("uploaded", "indexed", "summarized"):
+            # the same object announced twice (S3 notifications are at-least-once; the local watcher
+            # re-lists the bucket on every restart): recorded already, so no second event, no second
+            # trip through the embedder and summarizer (chaos drill 1)
+            log.info("already recorded for this key; not re-announced", status=old["status"])
+            return None
         ev = _envelope(
             "DocumentUploaded",
             "ingest",

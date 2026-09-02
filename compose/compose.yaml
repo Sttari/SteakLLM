@@ -268,6 +268,7 @@ services:
     build: { context: ../services, dockerfile: ingest/Dockerfile }
     image: steakllm/ingest:local
     profiles: ["services"]
+    stop_grace_period: 30s # as Kubernetes: SIGTERM, 30 s to finish the record in hand, then SIGKILL
     volumes: *aws_creds
     command: ["steakllm-ingest", "watch"] # dev stand-in for S3 → EventBridge: polls quarantine/
     env_file: ../.env
@@ -287,6 +288,7 @@ services:
     build: { context: ../services, dockerfile: embedder/Dockerfile }
     image: steakllm/embedder:local
     profiles: ["services"]
+    stop_grace_period: 30s
     volumes: *aws_creds
     env_file: ../.env
     environment: *svc_env
@@ -300,6 +302,7 @@ services:
     build: { context: ../services, dockerfile: summarizer/Dockerfile }
     image: steakllm/summarizer:local
     profiles: ["services"]
+    stop_grace_period: 30s
     volumes: *aws_creds
     env_file: ../.env
     environment: *svc_env
@@ -312,6 +315,7 @@ services:
     build: { context: ../services, dockerfile: notifier/Dockerfile }
     image: steakllm/notifier:local
     profiles: ["services"]
+    stop_grace_period: 30s
     volumes: *aws_creds
     env_file: ../.env
     environment: *svc_env

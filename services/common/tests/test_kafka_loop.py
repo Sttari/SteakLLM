@@ -43,6 +43,8 @@ def test_happy_path_handles_and_commits_after_the_batch():
     assert seen == ["DocumentUploaded", "DocumentIndexed"]
     assert consumer.commits == 1 and consumer.closed
     assert producer.sent == [] and loop.handled == 2
+    (pos,) = consumer.committed.values()
+    assert pos.offset == 2  # explicit: both handled → next offset 2
 
 
 def test_failure_is_retried_with_backoff_then_parked_on_the_retry_topic():
@@ -120,6 +122,24 @@ def test_chat_completed_is_keyed_by_event_id_when_doc_id_is_null():
     ev = example("ChatCompleted")
     produce(producer, "chats", ev)
     assert producer.sent[0]["key"] == ev["id"].encode()
+
+
+def test_stop_mid_batch_commits_only_what_was_handled():
+    events = [record(example("DocumentUploaded")) for _ in range(5)]
+    loop, consumer, producer, _ = make_loop([events], lambda ev, h: None)
+
+    seen = []
+
+    def stop_after_two(ev, h):
+        seen.append(1)
+        if len(seen) == 2:
+            loop.stop(15)
+
+    loop.handler = stop_after_two
+    loop.run()
+    assert loop.handled == 2
+    (pos,) = consumer.committed.values()
+    assert pos.offset == 2  # offsets 0 and 1 handled → next is 2; records 2–4 stay uncommitted
 
 
 def test_stop_then_second_signal_exits():

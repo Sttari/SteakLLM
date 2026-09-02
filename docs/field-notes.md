@@ -166,6 +166,24 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 *Fix:* sign in the way the frontend does (`POST /api/v1/auths/signin` works in no-auth mode), then the models are `llm`, `docs`, and a chat through the UI's proxy reached the gateway and Bedrock ("ready"). The `RESET_CONFIG_ON_START` flag added during the hunt stays (dev-only, harmless, documented).
 *Lesson:* when a tool "returns nothing", read the *server's* log before theorising — a 401 in the UI's log would have saved three restarts. Parse errors as errors, never as empty results.
 
+**Incident 23 — the first end-to-end run reached "summarized" in 2 s with no chunk count: workers race** (Sep 2 2026, Step 6.10)
+*Symptom:* `GET /v1/documents/{id}` said `summarized` almost immediately, `chunk_count` was `None`, and the catalog page showed a document that was summarized but never indexed.
+*Cause:* the embedder and the summarizer consume the *same* `DocumentUploaded` in parallel. The summarizer (one Bedrock call) can finish before the embedder (chunking, Ollama, Qdrant). The embedder's write was one conditional statement — "set status to indexed *and* record chunk_count, only if status is uploaded/indexed" — so when the summarizer got there first, the refusal (correct: never regress `summarized`) also threw away the indexing facts. A single status word cannot describe two workers finishing in either order.
+*Fix:* the embedder always records its facts (`chunk_count`, `embedding_model`, `indexed_at`) and only the status *word* is conditional; the gateway derives `indexed` and `summarized` from the facts (`stages_of`), not from the word; the catalog page and the status route show each stage as a fact of its own. The e2e test waits for both.
+*Lesson:* with independent consumers, "status" is not a ladder — it is a set of facts, each owned by one worker. Model it that way from the start, or the first parallel run will prove it for you. And the end-to-end test found this in its first two seconds; nothing narrower could have.
+
+**Incident 24 — the "graceful" stop of a busy consumer was a SIGKILL in disguise, then 45 s of silence** (Sep 2 2026, Step 6.11)
+*Symptom:* chaos drill 1's contrast run (`docker compose stop embedder`, SIGTERM) showed no "stopping after the batch in hand" line, and after the restart the embedder sat idle for ~43 s before indexing anything — the same as after a real SIGKILL.
+*Cause:* two mismatches, not a broken handler (an idle SIGTERM exited in under a second). (1) The consumer loop checked the stop flag only after the *whole polled batch*: up to 50 events × ~4 s of Ollama work, while Docker escalates SIGTERM to SIGKILL after 10 s. (2) Kafka keeps a dead member's partitions until its session timeout expires; the default our client negotiated was 45 s, so the restarted member joined and waited.
+*Fix:* the loop stops after the *record* in hand and commits **explicit offsets** for what it handled (a bare `commit()` would have committed the whole polled batch, including the unhandled tail — silent loss); `session_timeout_ms=10_000` with 3 s heartbeats; `stop_grace_period: 30s` on the four consumers in Compose (Kubernetes' default is 30 s too). Coordinator log after the fix: the member leaves the group the instant it closes; the restart is stable in 4 s; a hard kill costs 10 s, not 45. Write-up: `docs/chaos/01-embedder-kill.md`.
+*Lesson:* "handles SIGTERM" means nothing until you measure *how long* the handler needs against the grace period you actually get. And when a consumer stops early, commit what you handled, never what you polled.
+
+**Incident 25 — restarting ingest re-announced the whole bucket; the drill's first document waited 42 s** (Sep 2 2026, Step 6.11)
+*Symptom:* in the contrast run the first drill document was indexed 42 s after upload, before any signal was sent; the embedder log showed thirteen unrelated documents being re-indexed right after the four consumers were recreated.
+*Cause:* the local watcher's "already seen" set lives in process memory, so a restart re-lists `quarantine/` and the ingest handler produced a fresh `DocumentUploaded` for every leftover from earlier runs (drill run 1 failed before its cleanup). By the 6.3 contract re-delivery *was* re-announced ("consumers are idempotent") — correct for safety, but each restart cost a full pass of the bucket through the embedder and the summarizer (LLM tokens).
+*Fix:* in the handler, not the watcher, because real S3 notifications are at-least-once as well: the catalog update returns the old row (`ReturnValues="ALL_OLD"`); same key already recorded → log "already recorded for this key; not re-announced" and produce nothing. Same bytes under a *new* key still re-announce (the row's key moves). Verified: an ingest restart logged thirteen "already recorded" lines and the embedder did no work.
+*Lesson:* idempotent consumers make duplicates *safe*, not *free*. Stop the duplicate at the producer when the producer can tell — and a drill's timeline shows costs a passing test hides.
+
 **Open item — service images are 422–460 MB, above the 400 MB target** (Sep 2 2026, Step 6.9)
 `common` pulls boto3, qdrant-client (gRPC + numpy) and pypdf into every image. Levers: optional extras in `common` per client (`steakllm-common[qdrant]`), or `qdrant-client` without gRPC. Decide before Step 8 (pull time on the node); the target stays 400 MB.
 
@@ -182,7 +200,11 @@ The weekly "Dependabot Updates" run errored on the `uv` ecosystem because `servi
 
 Local stack (Step 5, Sep 2 2026): `make up` to fully healthy **17 s** (warm volumes); RAM at rest **~1.5 GB** (Open WebUI 666 MB, Kafka 359 MB, DynamoDB Local 208 MB, the rest < 100 MB each); disk ~16 GB of images. `make demo`: **12 s** first run, **7 s** second; Bedrock (Nova Micro) 0.8 s, 432 in / 95 out tokens ≈ $0.00003; 1,569-char PDF → 5 chunks → 5 × 384-dim vectors; idempotency: run 2 left 5 points / 1 catalog row unchanged while the topic went 3 → 6 events.
 
+End-to-end (6.10, Sep 2 2026): `make e2e` — presigned upload → ingest watcher → embedder + summarizer (containers) → `docs` answer with the document retrieved: **4.3 s** against a 60 s budget (Bedrock 2×, Ollama, Qdrant, DynamoDB Local, Kafka).
+
 Services in Compose (6.9, Sep 2 2026): five images built in 17 s (multi-stage, non-root); sizes gateway 460 MB, others 422 MB; `make up` → **12 healthy + 4 inits**; RAM with everything running **~2.6 GB**; Open WebUI → gateway → Bedrock round trip through the UI proxy: 644 ms.
+
+Chaos drill 1 (6.11, Sep 2 2026): 10 documents, embedder killed with 1 indexed; SIGKILL → 10/10 in **44 s** after restart (10 s session timeout + ~3.75 s per document through Ollama); SIGTERM → stop in **3.6 s** (one record), 10/10 in 34 s with no wait. Before the fix: ~43–45 s of waiting after either signal. Qdrant 50/50 points, offsets at end, 0 parked, every run.
 
 First pipeline apply: **2026-09-01T20:18:17Z** — `infra/ecr`, 10 resources, by `assumed-role/steakllm-ci-apply` (CloudTrail), ~5 s of apply after the approval click; run 33554383123. From Step 7: rebuild time (`terraform destroy` → `apply`). From Step 9: GPU summon-to-`/health` time, idle-to-removed time, the load-test table (c=1/8/32). From Step 10: upload-to-searchable and upload-to-email latency, drill results. From Step 11: tokens per GPU-hour and $/Mtok beside Bedrock.
 
@@ -199,3 +221,6 @@ First pipeline apply: **2026-09-01T20:18:17Z** — `infra/ecr`, 10 resources, by
 - Never feed markdown with backticks through an unquoted heredoc: the shell executes the backticks.
 - gitleaks flags a *variable* named `…api_key` next to a value-shaped argument; the one-line `# gitleaks:allow` with a reason is the fix, never a weaker rule.
 - One bad test file tripped two independent gates (fmt's formatting, tflint's dead-code rule) — layered checks each catch their own concern.
+- Measure the stop, not the signal handler: grace period ≥ one unit of work, and commit only what you handled.
+- Idempotent consumers make duplicates safe, not free; stop the duplicate at the producer when it can tell.
+- zsh does not word-split a variable holding a command (`$C build …` fails "no such file"); use a shell function.

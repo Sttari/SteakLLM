@@ -66,9 +66,13 @@ def make_consumer(s: Settings, group: str, topics: list[str]):
     c = KafkaConsumer(
         bootstrap_servers=s.kafka_bootstrap,
         group_id=group,
-        enable_auto_commit=False,  # the loop commits after a batch, never before
+        enable_auto_commit=False,  # the loop commits what it handled, never before
         auto_offset_reset="earliest",
         max_poll_records=s.consumer_batch_size,
+        # A killed member holds its partitions until its session expires; 10 s, not the broker's
+        # 45 s default, is the price of a hard kill we are willing to pay (chaos drill 1).
+        session_timeout_ms=10_000,
+        heartbeat_interval_ms=3_000,
     )
     c.subscribe(topics)
     return c
@@ -79,6 +83,16 @@ def produce(producer, topic: str, event: dict[str, Any], headers: dict[str, str]
     key = (event.get("doc_id") or event["id"]).encode()
     hdrs = [(k, v.encode()) for k, v in (headers or {}).items()]
     return producer.send(topic, key=key, value=json.dumps(event).encode(), headers=hdrs)
+
+
+def _next(rec: Record):
+    """The commit position after ``rec``: kafka-python wants OffsetAndMetadata(offset + 1)."""
+    try:
+        from kafka import OffsetAndMetadata
+
+        return OffsetAndMetadata(rec.offset + 1, "", -1)
+    except ImportError:  # pragma: no cover
+        return rec.offset + 1
 
 
 def headers_to_dict(headers: list[tuple[str, bytes]] | None) -> dict[str, str]:
@@ -116,11 +130,19 @@ class ConsumerLoop:
                 batch = self.consumer.poll(timeout_ms=self.poll_timeout_ms)
                 if not batch:
                     continue
-                for records in batch.values():
+                positions: dict[Any, Any] = {}  # partition -> next offset, for what we handled
+                for tp, records in batch.items():
                     for rec in records:
                         self.handle_record(rec)
+                        positions[tp] = _next(rec)
+                        if self._stopping:  # SIGTERM: finish this record, not the batch
+                            break
+                    if self._stopping:
+                        break
                 self.producer.flush()
-                self.consumer.commit()  # after the whole batch, never before
+                # explicit offsets: a bare commit() would commit the whole polled batch, including
+                # records we never handled when stopping early (chaos drill 1)
+                self.consumer.commit(positions)
         finally:
             self.producer.flush()
             self.consumer.close()

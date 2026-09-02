@@ -37,17 +37,25 @@ class FakeConsumer:
     loop: object = None
     commits: int = 0
     closed: bool = False
+    next_offset: int = 0
 
     def poll(self, timeout_ms: int = 0):
         if self.batches:
             batch = self.batches.pop(0)
+            for i, rec in enumerate(batch):
+                rec.offset = self.next_offset + i
+            self.next_offset += len(batch)
             return {("t", 0): batch}
         if self.loop is not None:
             self.loop.stop()
         return {}
 
-    def commit(self):
+    committed: dict = field(default_factory=dict)
+
+    def commit(self, offsets=None):
         self.commits += 1
+        if offsets:
+            self.committed.update(offsets)
 
     def close(self):
         self.closed = True
