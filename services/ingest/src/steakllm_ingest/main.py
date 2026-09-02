@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from steakllm_common.clients import catalog_table, s3_client
+from steakllm_common.health import start_probe_server
 from steakllm_common.kafka import make_producer
 from steakllm_common.logging import configure, get_logger
 from steakllm_common.settings import get_settings
@@ -102,6 +103,10 @@ def _watch(deps: Deps, interval: float) -> int:
     """Dev-only stand-in for S3 → EventBridge: poll the prefix, ring for keys the catalog lacks."""
     s = deps.settings
     seen: set[str] = set()
+    start_probe_server(
+        s.probe_port,
+        lambda: "Contents" in deps.s3.list_objects_v2(Bucket=s.documents_bucket, MaxKeys=1) or True,
+    )
     log.info("watching", bucket=s.documents_bucket, prefix=s.quarantine_prefix, interval=interval)
     try:
         while True:

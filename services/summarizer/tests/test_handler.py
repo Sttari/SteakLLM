@@ -20,6 +20,10 @@ class FakeS3:
     objects: dict[str, bytes] = field(default_factory=dict)
 
     def get_object(self, **kw):
+        if kw["Key"] not in self.objects:
+            from botocore.exceptions import ClientError
+
+            raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
         return {"Body": io.BytesIO(self.objects[kw["Key"]])}
 
 
@@ -169,6 +173,13 @@ def test_deleted_clears_the_summary_and_tolerates_a_missing_row(deps):
     handle(
         {"type": "DocumentDeleted", "doc_id": "e" * 64, "data": {"reason": "retention"}}, {}, deps
     )
+
+
+def test_object_gone_is_a_skip_not_a_failure(deps):
+    ev = uploaded(deps)
+    del deps.s3.objects[ev["data"]["key"]]
+    handle(ev, {}, deps)
+    assert deps.chat.calls == [] and deps.producer.sent == []
 
 
 def test_other_event_types_are_ignored(deps):

@@ -10,11 +10,13 @@ import httpx
 from .settings import Settings
 
 
-def s3_client(s: Settings):
-    """MinIO locally (explicit dev credentials), real S3 in the cloud (the pod's role)."""
+def s3_client(s: Settings, public: bool = False):
+    """MinIO locally (explicit dev credentials), real S3 in the cloud (the pod's role).
+    `public=True` signs for the client-reachable endpoint (presigned URLs)."""
     kwargs: dict[str, Any] = {"region_name": s.aws_region}
-    if s.s3_endpoint_url:
-        kwargs["endpoint_url"] = s.s3_endpoint_url
+    endpoint = (s.s3_public_endpoint_url or s.s3_endpoint_url) if public else s.s3_endpoint_url
+    if endpoint:
+        kwargs["endpoint_url"] = endpoint
     if s.minio_root_user and s.minio_root_password:
         kwargs["aws_access_key_id"] = s.minio_root_user
         kwargs["aws_secret_access_key"] = s.minio_root_password

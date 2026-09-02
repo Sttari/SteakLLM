@@ -84,7 +84,13 @@ def _summarize(event: dict[str, Any], deps: Deps) -> None:
     if row.get("status") == "summarized":
         log.info("already summarized; skipped before any LLM call")
         return
-    body = deps.s3.get_object(Bucket=d["bucket"], Key=d["key"])["Body"].read()
+    try:
+        body = deps.s3.get_object(Bucket=d["bucket"], Key=d["key"])["Body"].read()
+    except ClientError as e:
+        if e.response["Error"]["Code"] in ("NoSuchKey", "404", "NotFound"):
+            log.info("object gone; skipped (deleted before summarizing)")
+            return
+        raise
     text = extract_text(body, d["content_type"])[: s.summarizer_max_chars]
     result = deps.chat(PROMPT + text)
     summary, tags = parse_model_output(result.text)

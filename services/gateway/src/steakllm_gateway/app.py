@@ -55,6 +55,7 @@ class Deps:
     router: Router
     producer: Any
     s3: Any = None
+    s3_public: Any = None  # signs presigned URLs for the client-reachable endpoint
     table: Any = None
     retriever: Retriever | None = None
     ledger: QuotaLedger = field(default_factory=QuotaLedger)
@@ -235,7 +236,8 @@ def create_app(deps: Deps) -> FastAPI:
     def uploads(body: UploadBody, kid: str = Depends(auth)) -> dict[str, Any]:
         check_quota(kid)
         try:
-            out = presign_upload(deps.s3, s, body.filename, body.content_type, body.size_bytes)
+            signer = deps.s3_public or deps.s3
+            out = presign_upload(signer, s, body.filename, body.content_type, body.size_bytes)
         except ValueError as e:
             raise HTTPException(415, {"error": {"message": str(e)}}) from e
         except OverflowError as e:

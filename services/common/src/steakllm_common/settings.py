@@ -24,6 +24,9 @@ class Settings(BaseSettings):
 
     # S3 / MinIO
     s3_endpoint_url: str | None = None  # None = real S3
+    # Presigned URLs must be reachable by the *client*: in Compose the gateway talks to
+    # minio:9000 but signs for localhost:9000. Unset = s3_endpoint_url (real S3 serves both).
+    s3_public_endpoint_url: str | None = None
     minio_root_user: str | None = None  # when set, used as the S3 credentials (MinIO)
     minio_root_password: str | None = None
     documents_bucket: str

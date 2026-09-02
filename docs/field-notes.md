@@ -154,6 +154,21 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 *Fix:* DynamoDB Local published on 8001 (`DYNAMODB_ENDPOINT_URL`); `GATEWAY_URL` is the host address (`localhost:8000`) and Open WebUI gets `OPEN_WEBUI_GATEWAY_URL=http://gateway:8000/v1`; 6.9's Compose service overrides `GATEWAY_URL` for the summarizer container. Gateway `/readyz` now asks the broker for the `chats` topic's metadata instead of `bootstrap_connected()`, which stays false until the first send.
 *Lesson:* one `.env` serves two networks — the Mac and the Compose network — and every URL in it belongs to exactly one of them; name them accordingly. And a port list in a plan is a promise to check, not a decoration: 5.1's preflight checked the ports were free, not that they were distinct from each other.
 
+**Incident 21 — four of five service containers exited: `ProfileNotFound: default`; the ingest watcher was "unhealthy"** (Sep 2 2026, Step 6.9)
+*Symptom:* embedder, ingest, summarizer, notifier `Exited (1)` seconds after start; ingest, once fixed, stayed `unhealthy`.
+*Cause:* (1) the env file hands every container `AWS_PROFILE=default`, and botocore resolves the profile even for clients given explicit MinIO/DynamoDB-Local credentials — only the gateway mounted `~/.aws`. (2) `steakllm-ingest watch` never started the probe server; only the consumer loops did, so its `HEALTHCHECK` had nothing to ask.
+*Fix:* mount `~/.aws` read-only into all five (one profile serves the laptop; in the cluster each pod wears its own IAM role); the watcher starts `start_probe_server` like everyone else. Also: the first two image builds failed on `Readme file does not exist` — `.dockerignore` had excluded `README.md`, and the Dockerfiles didn't copy the service's own README that `pyproject.toml` declares.
+*Lesson:* a build context is a whitelist you wrote; when a wheel build says a file is missing, it is missing *from the context*, not from the repo. And every long-running process serves the probes, runners included.
+
+**Incident 22 — "Open WebUI shows no models" was my curl being told 401** (Sep 2 2026, Step 6.9)
+*Symptom:* `curl localhost:3000/api/models` → `[]`; I concluded the UI wasn't talking to the gateway, restarted it, forced it to re-read its config.
+*Cause:* `WEBUI_AUTH=false` removes the login *page*; API calls still need the session token a browser obtains automatically. My parser turned the 401 error body into an empty list. The UI's own log had `GET /api/models 401` all along.
+*Fix:* sign in the way the frontend does (`POST /api/v1/auths/signin` works in no-auth mode), then the models are `llm`, `docs`, and a chat through the UI's proxy reached the gateway and Bedrock ("ready"). The `RESET_CONFIG_ON_START` flag added during the hunt stays (dev-only, harmless, documented).
+*Lesson:* when a tool "returns nothing", read the *server's* log before theorising — a 401 in the UI's log would have saved three restarts. Parse errors as errors, never as empty results.
+
+**Open item — service images are 422–460 MB, above the 400 MB target** (Sep 2 2026, Step 6.9)
+`common` pulls boto3, qdrant-client (gRPC + numpy) and pypdf into every image. Levers: optional extras in `common` per client (`steakllm-common[qdrant]`), or `qdrant-client` without gRPC. Decide before Step 8 (pull time on the node); the target stays 400 MB.
+
 **Open item — Nova Micro does not reliably reproduce `[doc:chunk]` citation labels** (Sep 2 2026, Step 6.8)
 The `docs` model's system prompt asks for `[doc:chunk]` citations; retrieval is proven by `x-retrieved-doc-ids` and the answer is correct, but the small model often omits the label. Candidates: a stronger prompt (few-shot), Claude 3 Haiku for `docs`, or post-hoc citation from the retrieved set. Decide in Step 11's evaluation job.
 
@@ -166,6 +181,8 @@ The weekly "Dependabot Updates" run errored on the `uv` ecosystem because `servi
 ## 4. Measurements
 
 Local stack (Step 5, Sep 2 2026): `make up` to fully healthy **17 s** (warm volumes); RAM at rest **~1.5 GB** (Open WebUI 666 MB, Kafka 359 MB, DynamoDB Local 208 MB, the rest < 100 MB each); disk ~16 GB of images. `make demo`: **12 s** first run, **7 s** second; Bedrock (Nova Micro) 0.8 s, 432 in / 95 out tokens ≈ $0.00003; 1,569-char PDF → 5 chunks → 5 × 384-dim vectors; idempotency: run 2 left 5 points / 1 catalog row unchanged while the topic went 3 → 6 events.
+
+Services in Compose (6.9, Sep 2 2026): five images built in 17 s (multi-stage, non-root); sizes gateway 460 MB, others 422 MB; `make up` → **12 healthy + 4 inits**; RAM with everything running **~2.6 GB**; Open WebUI → gateway → Bedrock round trip through the UI proxy: 644 ms.
 
 First pipeline apply: **2026-09-01T20:18:17Z** — `infra/ecr`, 10 resources, by `assumed-role/steakllm-ci-apply` (CloudTrail), ~5 s of apply after the approval click; run 33554383123. From Step 7: rebuild time (`terraform destroy` → `apply`). From Step 9: GPU summon-to-`/health` time, idle-to-removed time, the load-test table (c=1/8/32). From Step 10: upload-to-searchable and upload-to-email latency, drill results. From Step 11: tokens per GPU-hour and $/Mtok beside Bedrock.
 

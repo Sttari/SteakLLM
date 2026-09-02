@@ -80,7 +80,13 @@ def handle(event: dict[str, Any], headers: dict[str, str], deps: Deps) -> None:
 def _index(event: dict[str, Any], deps: Deps) -> None:
     s, d = deps.settings, event["data"]
     doc = event["doc_id"]
-    body = deps.s3.get_object(Bucket=d["bucket"], Key=d["key"])["Body"].read()
+    try:
+        body = deps.s3.get_object(Bucket=d["bucket"], Key=d["key"])["Body"].read()
+    except ClientError as e:
+        if e.response["Error"]["Code"] in ("NoSuchKey", "404", "NotFound"):
+            log.info("object gone; skipped (deleted before indexing)")  # stale event, not poison
+            return
+        raise
     if make_doc_id(body) != d["sha256"]:
         raise ShaMismatchError(f"sha256 of s3://{d['bucket']}/{d['key']} != announced")
     pieces = chunk(extract_text(body, d["content_type"]))

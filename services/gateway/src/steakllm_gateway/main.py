@@ -41,6 +41,7 @@ def build_deps() -> Deps:
         router=router,
         producer=producer,
         s3=s3_client(s),
+        s3_public=s3_client(s, public=True),
         table=catalog_table(s),
         retriever=Retriever(qdrant_client(s), partial(embed, s), top_k=s.rag_top_k),
         ready=lambda: bool(producer.partitions_for(s.topic_chats)),

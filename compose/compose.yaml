@@ -214,6 +214,8 @@ services:
       OPENAI_API_BASE_URL: ${OPEN_WEBUI_GATEWAY_URL}
       OPENAI_API_KEY: ${GATEWAY_API_KEY}
       ENABLE_OLLAMA_API: "false" # no side door to the embedding server; chat goes through the gateway
+      ENABLE_OPENAI_API: "true"
+      RESET_CONFIG_ON_START: "true" # dev only: Open WebUI persists connections from first boot; re-read the env
       WEBUI_AUTH: "false" # laptop only; in the cluster the tailnet is the door
       ENABLE_SIGNUP: "false"
       WEBUI_NAME: SteakLLM (local)
@@ -223,6 +225,95 @@ services:
       timeout: 5s
       retries: 12
       start_period: 30s
+
+  # ---- The five services (profile "services"): the same .env keys, container-network values --------
+  # Build context is ../services so every Dockerfile sees contracts/ and common/.
+  gateway:
+    build: { context: ../services, dockerfile: gateway/Dockerfile }
+    image: steakllm/gateway:local
+    profiles: ["services"]
+    ports:
+      - "${GATEWAY_PORT:-8000}:8000"
+    env_file: ../.env
+    environment: &svc_env
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_PUBLIC_ENDPOINT_URL: http://localhost:9000 # presigned URLs are for the client on the Mac
+      DYNAMODB_ENDPOINT_URL: http://dynamodb:8000
+      KAFKA_BOOTSTRAP: kafka:19092
+      QDRANT_URL: http://qdrant:6333
+      EMBEDDINGS_URL: http://ollama:11434/v1
+      VLLM_URL: http://vllm-stub:8081
+      GATEWAY_URL: http://gateway:8000/v1
+    volumes: &aws_creds
+      # AWS_PROFILE from the env file needs the profile to exist inside the container. Locally one
+      # read-only profile serves all five; in the cluster each pod wears its own IAM role instead.
+      - ~/.aws:/home/app/.aws:ro
+    depends_on:
+      kafka: { condition: service_healthy }
+      qdrant: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      dynamodb: { condition: service_healthy }
+    healthcheck: &svc_health_8000
+      test: ["CMD", "python", "-c", "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2).status == 200 else 1)"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
+
+  ingest:
+    build: { context: ../services, dockerfile: ingest/Dockerfile }
+    image: steakllm/ingest:local
+    profiles: ["services"]
+    volumes: *aws_creds
+    command: ["steakllm-ingest", "watch"] # dev stand-in for S3 → EventBridge: polls quarantine/
+    env_file: ../.env
+    environment: *svc_env
+    depends_on:
+      kafka: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      dynamodb: { condition: service_healthy }
+    healthcheck: &svc_health_8080
+      test: ["CMD", "python", "-c", "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2).status == 200 else 1)"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
+
+  embedder:
+    build: { context: ../services, dockerfile: embedder/Dockerfile }
+    image: steakllm/embedder:local
+    profiles: ["services"]
+    volumes: *aws_creds
+    env_file: ../.env
+    environment: *svc_env
+    depends_on:
+      kafka: { condition: service_healthy }
+      qdrant: { condition: service_healthy }
+      ollama: { condition: service_healthy }
+    healthcheck: *svc_health_8080
+
+  summarizer:
+    build: { context: ../services, dockerfile: summarizer/Dockerfile }
+    image: steakllm/summarizer:local
+    profiles: ["services"]
+    volumes: *aws_creds
+    env_file: ../.env
+    environment: *svc_env
+    depends_on:
+      kafka: { condition: service_healthy }
+      gateway: { condition: service_healthy }
+    healthcheck: *svc_health_8080
+
+  notifier:
+    build: { context: ../services, dockerfile: notifier/Dockerfile }
+    image: steakllm/notifier:local
+    profiles: ["services"]
+    volumes: *aws_creds
+    env_file: ../.env
+    environment: *svc_env
+    depends_on:
+      kafka: { condition: service_healthy }
+    healthcheck: *svc_health_8080
 
 volumes:
   minio-data:

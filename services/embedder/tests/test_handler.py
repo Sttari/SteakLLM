@@ -24,6 +24,10 @@ class FakeS3:
     objects: dict[str, bytes] = field(default_factory=dict)
 
     def get_object(self, Bucket, Key):  # noqa: N803 — boto3's names
+        if Key not in self.objects:
+            from botocore.exceptions import ClientError
+
+            raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
         return {"Body": io.BytesIO(self.objects[Key])}
 
 
@@ -183,6 +187,13 @@ def test_deleted_removes_only_that_documents_points(deps):
     )
     assert all(p["doc_id"] == b["doc_id"] for p in deps.qdrant.points.values())
     assert 0 < len(deps.qdrant.points) < total
+
+
+def test_object_gone_is_a_skip_not_a_failure(deps):
+    ev = uploaded(deps)
+    del deps.s3.objects[ev["data"]["key"]]  # deleted before the librarian got to it
+    handle(ev, {}, deps)
+    assert deps.qdrant.points == {} and deps.producer.sent == []
 
 
 def test_other_event_types_are_ignored(deps):
