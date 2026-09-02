@@ -127,9 +127,10 @@ def main() -> int:
             SIGNAL, "embedder"
         )  # kill: SIGKILL, no commit; stop: SIGTERM, graceful leave
         killed_at = time.monotonic() - t0
-        print(
-            f"[{killed_at:5.1f}s] {SIGNAL.upper()}ED the embedder with {mid}/{N_DOCS} indexed"
+        verb = {"kill": "KILLED (SIGKILL)", "stop": "STOPPED (SIGTERM)"}.get(
+            SIGNAL, SIGNAL.upper()
         )
+        print(f"[{killed_at:5.1f}s] {verb} the embedder with {mid}/{N_DOCS} indexed")
         time.sleep(2)
         compose("start", "embedder")
         print(f"[{time.monotonic() - t0:5.1f}s] started the embedder again")
