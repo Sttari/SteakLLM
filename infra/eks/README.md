@@ -8,6 +8,8 @@ The Kubernetes control plane (7.3) and, in 7.4, one spot node with the add-ons. 
 | Log group, 14-day retention | `cluster.tf` | Created before the cluster so EKS does not create it with "never expire" |
 | The cluster: private subnets, private + public endpoint, public restricted to one `/32`, five log streams, `STANDARD` support, no self-managed add-ons | `cluster.tf` | ADR-0008. The `/32` is the interim admin door; Step 8 flips `endpoint_public_access` to `false` |
 | Access entries: the apply role and the laptop identity, both cluster-admin | `cluster.tf` | The guest list. Nothing else can talk to the API. Step 8 adds per-service identities via Pod Identity, not here |
+| Node role + launch template (40 GB gp3, IMDSv2, hop limit 1) + managed node group `cpu`: one t4g.large **spot**, one AZ, labels `steakllm.io/pool=cpu` | `nodegroup.tf` | The always-on body (ADR-0008). One AZ because EBS volumes are AZ-bound |
+| Managed add-ons pinned: vpc-cni, kube-proxy, pod-identity-agent (before the node); coredns, metrics-server, ebs-csi (after) | `addons.tf` | The plumbing. The EBS driver wears its own IAM role through a Pod Identity association — the first pod with its own hat |
 
 **Inputs that are not in git:** `TF_VAR_admin_cidr` (Thomas's address as `/32`) and `TF_VAR_admin_principal_arn` (the laptop's IAM identity) are repository variables, injected by `plan.yml` and `apply.yml`.
 
@@ -18,5 +20,5 @@ The Kubernetes control plane (7.3) and, in 7.4, one spot node with the add-ons. 
 ```
 aws eks update-kubeconfig --name steakllm --region us-east-1
 kubectl get --raw /healthz        # ok
-kubectl get nodes                 # No resources found — until 7.4
+kubectl get nodes                 # one node, Ready, arm64, after 7.4
 ```

@@ -22,3 +22,13 @@ output "private_subnet_ids" {
   description = "Passed through from infra/network for the node group (7.4) and Karpenter (Step 9)."
   value       = local.private_subnet_ids
 }
+
+output "node_role_arn" {
+  description = "The node role; Step 9's Karpenter nodes reuse it."
+  value       = aws_iam_role.node.arn
+}
+
+output "node_group_name" {
+  description = "The always-on CPU node group."
+  value       = aws_eks_node_group.cpu.node_group_name
+}
