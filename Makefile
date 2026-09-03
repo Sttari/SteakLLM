@@ -68,11 +68,14 @@ cluster-up: ## rebuild the cluster (apply.yml, four gates) and bootstrap Argo CD
 	kubectl apply -f platform/root.yaml
 	@echo "Argo is bootstrapped; watch: kubectl -n argocd get applications -w"
 
-cluster-down: ## remove load balancers the cluster created, then tear eks down (teardown.yml, one gate); the network stays
+cluster-down: ## remove load balancers and PVC volumes the cluster created, then tear eks down (teardown.yml, one gate); the network stays
 	@echo "Removing Ingresses and LoadBalancer Services first (an ALB outlives the cluster and keeps billing)…"
 	-kubectl get ingress -A --no-headers 2>/dev/null | awk '{print "-n "$$1" "$$2}' | xargs -r -L1 kubectl delete ingress
 	-kubectl get svc -A --field-selector spec.type=LoadBalancer --no-headers 2>/dev/null | awk '{print "-n "$$1" "$$2}' | xargs -r -L1 kubectl delete svc
 	@until [ "$$(aws elbv2 describe-load-balancers --query 'length(LoadBalancers)' --output text)" = 0 ]; do echo "waiting for load balancers to go…"; sleep 15; done
+	@echo "Deleting every PersistentVolumeClaim so the EBS driver removes the volumes (a torn-down cluster cannot; orphaned volumes keep billing)…"
+	-kubectl delete pvc --all --all-namespaces --wait=true --timeout=5m
+	@until [ "$$(aws ec2 describe-volumes --filters Name=tag-key,Values=kubernetes.io/created-for/pvc/name --query 'length(Volumes)' --output text)" = 0 ]; do echo "waiting for PVC volumes to go…"; sleep 15; done
 	gh workflow run teardown.yml -f module=eks -f confirm=eks && sleep 30 && RUN=$$(gh run list --workflow teardown --limit 1 --json databaseId --jq '.[0].databaseId') && \
 	until [ "$$(gh api repos/Sttari/SteakLLM/actions/runs/$$RUN/pending_deployments --jq length)" = 1 ]; do sleep 15; done && \
 	gh api -X POST repos/Sttari/SteakLLM/actions/runs/$$RUN/pending_deployments -F 'environment_ids[]=$(ENV_ID)' -f state=approved -f comment="cluster-down" >/dev/null && echo "teardown approved" && \

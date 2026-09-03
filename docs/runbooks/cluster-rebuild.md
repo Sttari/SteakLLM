@@ -6,7 +6,7 @@ The platform is cattle: everything below `infra/bootstrap` can be removed and re
 
 ## The everyday version (Step 8.11)
 
-`make cluster-down` at the end of a session: removes every Ingress and LoadBalancer Service first (a controller-made ALB outlives the cluster and keeps billing; none exist before Step 12), waits until `aws elbv2 describe-load-balancers` is empty, dispatches `teardown.yml` for `eks`, approves its gate, waits, prints the meter check. `make cluster-up` at the start: dispatches `apply.yml`, approves the four gates in order, refreshes kubeconfig, runs the Argo bootstrap, applies the root Application. The pre-step cannot live inside `teardown.yml`: the cluster's API is never reachable from a GitHub runner (one `/32`, then private-only), so the laptop does it.
+`make cluster-down` at the end of a session: removes every Ingress and LoadBalancer Service first (a controller-made ALB outlives the cluster and keeps billing; none exist before Step 12), waits until `aws elbv2 describe-load-balancers` is empty, removes every PersistentVolumeClaim and waits until no PVC-backed EBS volume remains (a torn-down cluster cannot delete its own disks; an orphaned volume keeps billing — found Sep 3 2026, 82 GB), dispatches `teardown.yml` for `eks`, approves its gate, waits, prints the meter check. `make cluster-up` at the start: dispatches `apply.yml`, approves the four gates in order, refreshes kubeconfig, runs the Argo bootstrap, applies the root Application. The pre-step cannot live inside `teardown.yml`: the cluster's API is never reachable from a GitHub runner (one `/32`, then private-only), so the laptop does it.
 
 ## Order
 
