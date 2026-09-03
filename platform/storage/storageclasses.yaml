@@ -1,0 +1,32 @@
+# gp3: the default disk for every PersistentVolumeClaim. WaitForFirstConsumer binds the volume in the
+# AZ of the pod that uses it (there is one AZ for now, but the habit is right). Expandable: a full
+# Kafka log grows with one edit to the claim. Encrypted with the AWS-managed key.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  encrypted: "true"
+  fsType: ext4
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Delete # volumes die with their claims — and with the cluster (dev-time posture, ADR-0008)
+---
+# gp2: created by EKS with the legacy in-tree provisioner and marked default. Adopted here only to
+# remove that mark; nothing should ever ask for it.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp2
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+provisioner: kubernetes.io/aws-ebs
+parameters:
+  fsType: ext4
+  type: gp2
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete

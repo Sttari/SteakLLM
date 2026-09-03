@@ -1,0 +1,73 @@
+# The rooms. Labels are what NetworkPolicies (8.10) select on; pod-security is the restricted profile
+# by default and relaxed only where a component needs it (Kafka, the log collector).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: steakllm
+  labels:
+    steakllm.io/tier: services
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    steakllm.io/tier: platform
+    pod-security.kubernetes.io/enforce: baseline # node-exporter needs the host's network and filesystem
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: logging
+  labels:
+    steakllm.io/tier: platform
+    pod-security.kubernetes.io/enforce: baseline # the collector reads /var/log on the node
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kafka
+  labels:
+    steakllm.io/tier: data
+    pod-security.kubernetes.io/enforce: baseline
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: qdrant
+  labels:
+    steakllm.io/tier: data
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ollama
+  labels:
+    steakllm.io/tier: data
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: open-webui
+  labels:
+    steakllm.io/tier: ui
+    pod-security.kubernetes.io/enforce: baseline
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: external-secrets
+  labels:
+    steakllm.io/tier: platform
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tailscale
+  labels:
+    steakllm.io/tier: platform
+    pod-security.kubernetes.io/enforce: baseline # the proxies need NET_ADMIN for WireGuard

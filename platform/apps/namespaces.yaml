@@ -1,0 +1,22 @@
+# Every namespace the platform uses, created first (sync wave -2) so that Applications, secrets and
+# NetworkPolicies have somewhere to land. A namespace here is a room in the museum; 8.10 puts a
+# default-deny on each door.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: namespaces
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Sttari/SteakLLM.git
+    targetRevision: main
+    path: platform/namespaces
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: false   # never delete a namespace (and everything in it) because a file went missing
+      selfHeal: true
