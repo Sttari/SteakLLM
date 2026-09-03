@@ -1,0 +1,96 @@
+# kube-prometheus-stack 88.6.4 on one t4g.xlarge. Requests are the memory table's numbers (field notes §2).
+
+# ---- what is scraped ---------------------------------------------------------------------------------
+# Everything the chart knows (node, kubelet, apiserver, CoreDNS, kube-state-metrics) plus every
+# ServiceMonitor/PodMonitor in any namespace — Argo, Strimzi, Qdrant and the workers register theirs.
+prometheus:
+  prometheusSpec:
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    retention: 15d
+    retentionSize: 18GB
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          resources:
+            requests:
+              storage: 20Gi
+    resources:
+      requests: { cpu: 200m, memory: 768Mi }
+      limits: { cpu: "1", memory: 1536Mi }
+    nodeSelector:
+      steakllm.io/pool: cpu
+
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests: { cpu: 25m, memory: 64Mi }
+      limits: { cpu: 100m, memory: 128Mi }
+    nodeSelector:
+      steakllm.io/pool: cpu
+  config:
+    route:
+      receiver: "null" # Step 11 wires real receivers with a runbook per alert
+      group_by: [alertname, namespace]
+    receivers:
+      - name: "null"
+
+# ---- Grafana ----------------------------------------------------------------------------------------
+grafana:
+  admin:
+    existingSecret: grafana-admin # from Secrets Manager via External Secrets (steakllm/grafana)
+    userKey: admin-user
+    passwordKey: admin-password
+  service:
+    type: ClusterIP # reached by port-forward now and the tailnet (8.9); never an Ingress here
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { cpu: 300m, memory: 256Mi }
+  nodeSelector:
+    steakllm.io/pool: cpu
+  sidecar:
+    dashboards:
+      enabled: true
+      searchNamespace: ALL # any ConfigMap labelled grafana_dashboard=1 becomes a dashboard (platform/monitoring/dashboards)
+    datasources:
+      enabled: true
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      url: http://loki.logging.svc:3100
+      access: proxy
+      isDefault: false
+
+# ---- exporters ---------------------------------------------------------------------------------------
+prometheus-node-exporter:
+  resources:
+    requests: { cpu: 25m, memory: 32Mi }
+    limits: { cpu: 100m, memory: 64Mi }
+kube-state-metrics:
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+    limits: { cpu: 100m, memory: 128Mi }
+  nodeSelector:
+    steakllm.io/pool: cpu
+prometheusOperator:
+  resources:
+    requests: { cpu: 50m, memory: 96Mi }
+    limits: { cpu: 200m, memory: 256Mi }
+  nodeSelector:
+    steakllm.io/pool: cpu
+  admissionWebhooks:
+    patch:
+      nodeSelector:
+        steakllm.io/pool: cpu
+
+# EKS hides the control plane; these scrape targets would only ever be down.
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+kubeEtcd:
+  enabled: false
