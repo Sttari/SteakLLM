@@ -28,3 +28,7 @@ Step 7 creates the cluster and the one always-on node, and installs Argo CD so t
 - One interim public path exists between Step 7.3 and Step 8's tailnet, restricted to one address. Rotating Thomas's address (home network change) means updating one repository variable and one apply.
 - Exactly one imperative step exists in the whole system: the Argo bootstrap. It is documented in `platform/README.md` and in the rebuild runbook, and the rebuild drill (7.6) proves it is repeatable.
 - The apply role holds cluster-admin through an access entry; that is broader than Step 8's per-service roles will be, and is the same "narrow later" debt as ADR-0001 records for the apply role itself.
+
+## Amendment (Sep 3 2026) — a dev-time cluster, not an always-on one
+
+Thomas's decision at the end of Step 7: the platform should charge only while it is being worked on. The control plane ($2.40/day) cannot be paused, only removed, so the session ritual now ends with `teardown.yml` for `eks` and begins with `apply.yml` plus the one-minute Argo bootstrap — the rebuild drill (7.6) measured the round trip at 40 minutes, which Step 8.11 turns into two make targets and shortens by keeping the network up. Consequences: every EBS volume is lost with the cluster (acceptable before Step 10's backups: test data the pipeline regenerates); the ALB and anything else a controller creates outside Kubernetes must be deleted *before* the cluster goes (8.11); the "always-on small cluster" line in the Decisions table is amended, and the demo posture is revisited at Step 12.
