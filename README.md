@@ -60,7 +60,7 @@ The complete table with the alternative rejected for each choice is in [`PLAN.md
 - [X]  **4.** Event contracts — versioned schemas and the idempotency rules
 - [X]  **5.** Local dev stack — Kafka, MinIO, DynamoDB Local, Qdrant, TEI, Open WebUI on the laptop
 - [X]  **6.** The five services with tests — gateway, embedder, summarizer, notifier, ingest
-- [ ]  **7.** Network and cluster — VPC, EKS, the always-on CPU node, Argo CD
+- [X]  **7.** Network and cluster — VPC, EKS, the always-on CPU node, Argo CD
 - [ ]  **8.** Platform services by GitOps — monitoring, Kafka, Qdrant, secrets, the one public door
 - [ ]  **9.** GPU pool — Karpenter, KEDA, vLLM summoned on demand
 - [ ]  **10.** Cloud event pipeline and chaos drills — S3, EventBridge, Lambda, DynamoDB, SNS

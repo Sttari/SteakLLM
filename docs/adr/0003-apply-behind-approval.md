@@ -29,3 +29,7 @@ Two corollaries:
 - The gate adds a click to every infra merge. Acceptable for a solo project; if it becomes friction, narrow the apply role first (ADR-0001's revisit) before loosening the gate.
 - `plan.yml` and `apply.yml` must be kept in step (same `TF_VAR_*` inputs, same module matrix minus bootstrap) or a change can plan clean and fail to apply. Adding a module means one line in each.
 - The `release.yml` workflow (build and push images, bump Helm values) is deferred to Step 6 with the services it builds; a build workflow with nothing to build proves nothing.
+
+## Amendment (Sep 3 2026, Step 7) — one approval per module, and a gated teardown
+
+`apply.yml` runs its modules as a matrix, one at a time, and each job references the `production` environment; GitHub therefore asks for an approval **per module**, each with that module's plan in its summary. Discovered in 7.2 (the second module sat at its own gate after the first click), considered as a nuisance, kept as a feature: a reviewer approves a plan, never a run. The alternative — one job looping over the modules behind one click — would apply `eks` on the strength of having read `network`. Cost: three clicks per full apply; a loop of `pending_deployments` calls makes it painless. `teardown.yml` (7.6) reuses the same gate and the same concurrency lock for removals, with the module name typed twice; `bootstrap` is not an option it offers.

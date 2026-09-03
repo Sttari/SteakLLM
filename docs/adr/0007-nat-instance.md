@@ -1,6 +1,6 @@
 # 0007 — Egress through a NAT instance, not a NAT gateway; gateway endpoints for S3 and DynamoDB
 
-Status: proposed (accepted when Step 7.2 is applied)
+Status: accepted (Sep 3 2026, after 7.2's second apply and the 7.4 egress drill)
 Date: 2026-09-02
 
 ## Context
