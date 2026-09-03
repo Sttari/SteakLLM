@@ -82,7 +82,9 @@ spec:
   policyTypes: [Egress]
   egress:
     - to: [{ podSelector: {} }]
-    - to: [{ ipBlock: { cidr: 10.42.0.0/16 } }] # the API server's private endpoints live in the VPC
+    # The Kubernetes API: pods dial the `kubernetes` Service's ClusterIP (the service range, 172.20.0.0/16),
+    # and the VPC CNI agent judges egress against that address, not the ENI it maps to (Incident 30).
+    - to: [{ ipBlock: { cidr: 172.20.0.0/16 } }, { ipBlock: { cidr: 10.42.0.0/16 } }]
       ports: [{ protocol: TCP, port: 443 }]
 ---
 # → Qdrant: the steakllm namespace, Prometheus (metrics on 6333), the Tailscale proxy (a Step 9 dashboard).
