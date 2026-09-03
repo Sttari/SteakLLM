@@ -46,6 +46,12 @@ variable "apply_role_name" {
   default     = "steakllm-ci-apply"
 }
 
+variable "node_instance_type" {
+  description = "The always-on node. t4g.xlarge (4 vCPU, 16 GiB) since Step 8.1: the whole platform plus the workers needs ≈ 8.6 GiB requested (ADR-0009)."
+  type        = string
+  default     = "t4g.xlarge"
+}
+
 variable "log_retention_days" {
   description = "Control-plane logs in CloudWatch. 14 days is enough to debug and costs cents."
   type        = number
