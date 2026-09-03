@@ -1,4 +1,4 @@
-# The one body (7.4): a managed node group of one t4g.large bought as spot (ADR-0008). AWS launches,
+# The one body (7.4): a managed node group of one node bought as spot (ADR-0008; t4g.xlarge since 8.1, ADR-0009). AWS launches,
 # replaces and upgrades the node; we say what it is, where it lives and what it may do.
 
 # ---- the node's role: join the cluster, pull images, give pods addresses, be reachable by SSM ---------
@@ -72,8 +72,8 @@ resource "aws_eks_node_group" "cpu" {
   # in the other AZ could not mount them (ADR-0008).
   subnet_ids     = [local.private_subnet_ids[0]]
   ami_type       = "AL2023_ARM_64_STANDARD"
-  capacity_type  = "SPOT" # ≈ $0.0265/hour on Sep 3 2026 against $0.0672 on-demand; reclaimed with 2 minutes' notice, replaced by the group
-  instance_types = ["t4g.large"]
+  capacity_type  = "SPOT" # xlarge ≈ $0.071/hour on Sep 3 2026 against $0.134 on-demand; reclaimed with 2 minutes' notice, replaced by the group
+  instance_types = [var.node_instance_type]
   labels         = { "steakllm.io/pool" = "cpu" }
 
   scaling_config {

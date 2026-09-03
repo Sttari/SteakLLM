@@ -23,7 +23,7 @@ jobs:
     environment: production     # the gate: required reviewer + protected branches only (3.5)
     strategy:
       matrix:
-        module: [ecr, network, eks]  # in dependency order; grows with infra/: data, pipeline… never bootstrap
+        module: [ecr, network, eks, platform]  # in dependency order (platform's associations need the cluster); grows with infra/: data, pipeline… never bootstrap
       max-parallel: 1
     concurrency:
       group: apply-${{ matrix.module }}
