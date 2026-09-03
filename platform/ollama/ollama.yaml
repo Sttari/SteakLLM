@@ -103,8 +103,12 @@ metadata:
   annotations:
     argocd.argoproj.io/hook: PostSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    # a one-shot job: probes make no sense for a container that exits when done
+    ignore-check.kube-linter.io/no-liveness-probe: "one-shot job"
+    ignore-check.kube-linter.io/no-readiness-probe: "one-shot job"
 spec:
   backoffLimit: 6
+  ttlSecondsAfterFinished: 600 # the finished pod and its logs linger ten minutes, then go
   template:
     spec:
       restartPolicy: OnFailure
