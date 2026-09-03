@@ -1,5 +1,7 @@
 # Qdrant (chart 1.19.0): one node, gp3 disk, reached as http://qdrant.qdrant.svc:6333 (same port as compose/).
 replicaCount: 1
+image:
+  useUnprivilegedImage: true # no root init container (ensure-dir-ownership) — required by the restricted profile
 persistence:
   size: 10Gi
   storageClassName: gp3

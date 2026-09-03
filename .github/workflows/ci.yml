@@ -55,6 +55,11 @@ jobs:
         with:
           directory: platform
           config: .kube-linter.yaml
+      - name: kube-linter on our charts (rendered)
+        run: |
+          curl -sfL https://github.com/stackrox/kube-linter/releases/download/v0.8.3/kube-linter-linux.tar.gz | tar xz -C /usr/local/bin kube-linter
+          for c in charts/*/; do helm template "$(basename "$c")" "$c" > "/tmp/$(basename "$c").yaml"; done
+          kube-linter lint /tmp/*.yaml --config .kube-linter.yaml
 
   # Formatting and internal consistency of every Terraform module.
   # -backend=false: validate without touching S3 state, so no AWS credentials needed.

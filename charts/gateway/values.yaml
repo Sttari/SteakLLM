@@ -1,0 +1,67 @@
+# The gateway on the cluster. The image is the release role's push (release.yml, tagged by commit);
+# the Application in platform/apps/gateway.yaml sets image.tag. Every address below is a cluster
+# Service; the AWS side is reached with the steakllm-gateway Pod Identity role (infra/platform).
+
+image:
+  repository: 066591056087.dkr.ecr.us-east-1.amazonaws.com/steakllm/gateway
+  tag: sha-3432f6a
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+serviceAccount:
+  name: gateway # the Pod Identity association is steakllm/gateway → role steakllm-gateway; no annotation needed
+
+# Non-secret settings (steakllm_common.settings keys, upper-cased). Secrets come from the gateway-keys
+# Secret that External Secrets syncs from steakllm/gateway.
+config:
+  AWS_REGION: us-east-1
+  BEDROCK_MODEL_ID: amazon.nova-micro-v1:0
+  DOCUMENTS_BUCKET: steakllm-documents-066591056087 # Step 10 creates it; the presigned-upload route needs it to exist
+  QUARANTINE_PREFIX: quarantine/
+  CATALOG_TABLE: steakllm-catalog                    # Step 10 creates it
+  KAFKA_BOOTSTRAP: steakllm-kafka-bootstrap.kafka.svc:9092
+  TOPIC_DOCUMENTS: documents
+  TOPIC_DOCUMENTS_RETRY: documents.retry
+  TOPIC_DOCUMENTS_DLQ: documents.dlq
+  TOPIC_CHATS: chats
+  QDRANT_URL: http://qdrant.qdrant.svc:6333
+  QDRANT_COLLECTION: documents
+  EMBEDDINGS_URL: http://ollama.ollama.svc:11434/v1
+  EMBEDDING_MODEL: all-minilm
+  EMBEDDING_DIM: "384"
+  VLLM_URL: http://vllm.steakllm.svc:8000 # nothing answers until Step 9: the breaker opens and Bedrock answers
+  GATEWAY_PORT: "8000"
+  GATEWAY_RPM: "60"
+  GATEWAY_TOKENS_PER_DAY: "200000"
+
+secret:
+  name: gateway-keys
+  apiKeyKey: api_key
+  demoKeyKey: demo_key
+
+service:
+  port: 8000
+
+resources:
+  requests: { cpu: 100m, memory: 256Mi }
+  limits: { cpu: "1", memory: 512Mi }
+
+nodeSelector:
+  steakllm.io/pool: cpu
+
+# restricted Pod Security: the image runs as uid 10001 ("app"), no capabilities, read-only root.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+podDisruptionBudget:
+  maxUnavailable: 1
