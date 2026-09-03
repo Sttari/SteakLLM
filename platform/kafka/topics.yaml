@@ -1,0 +1,53 @@
+# The four topics, the same names and settings as compose/ so the services need no change.
+# documents.* : the pipeline's logbook (7 days); chats : usage events (30 days). 3 partitions each.
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: documents
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: steakllm
+spec:
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: "604800000"
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: documents.retry
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: steakllm
+spec:
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: "604800000"
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: documents.dlq
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: steakllm
+spec:
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: "604800000"
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: chats
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: steakllm
+spec:
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: "2592000000"

@@ -14,7 +14,12 @@ metadata:
   name: monitoring
   labels:
     steakllm.io/tier: platform
-    pod-security.kubernetes.io/enforce: baseline # node-exporter needs the host's network and filesystem
+    # node-exporter mounts the node's /proc, /sys and / read-only and uses the host network: that is
+    # `privileged` territory under Pod Security (baseline forbids hostPath). Enforce privileged, warn
+    # at baseline so anything *else* in this room that oversteps is at least noticed (Incident 28).
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/warn: baseline
+    pod-security.kubernetes.io/audit: baseline
 ---
 apiVersion: v1
 kind: Namespace
@@ -22,7 +27,10 @@ metadata:
   name: logging
   labels:
     steakllm.io/tier: platform
-    pod-security.kubernetes.io/enforce: baseline # the collector reads /var/log on the node
+    # Alloy tails /var/log/pods on the node through a hostPath mount (baseline forbids it) — Incident 28.
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/warn: baseline
+    pod-security.kubernetes.io/audit: baseline
 ---
 apiVersion: v1
 kind: Namespace

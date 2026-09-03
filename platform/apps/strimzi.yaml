@@ -1,0 +1,31 @@
+# Strimzi: the operator that turns a `Kafka` resource into a running Kafka and a `KafkaTopic` into a
+# topic. Watches the kafka namespace only. Wave 2; the cluster itself is platform/apps/kafka.yaml (wave 3).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: strimzi
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  sources:
+    - repoURL: https://strimzi.io/charts
+      chart: strimzi-kafka-operator
+      targetRevision: 1.2.0
+      helm:
+        releaseName: strimzi
+        valueFiles:
+          - $values/platform/strimzi/values.yaml
+    - repoURL: https://github.com/Sttari/SteakLLM.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kafka
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true # Strimzi's CRDs are large
