@@ -19,7 +19,7 @@ permissions:
 jobs:
   apply:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60         # a cluster is ~13 min, a node group can wait on spot capacity (Incident 27)
     environment: production     # the gate: required reviewer + protected branches only (3.5)
     strategy:
       matrix:

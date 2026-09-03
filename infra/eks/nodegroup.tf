@@ -72,8 +72,8 @@ resource "aws_eks_node_group" "cpu" {
   # in the other AZ could not mount them (ADR-0008).
   subnet_ids     = [local.private_subnet_ids[0]]
   ami_type       = "AL2023_ARM_64_STANDARD"
-  capacity_type  = "SPOT" # xlarge ≈ $0.071/hour on Sep 3 2026 against $0.134 on-demand; reclaimed with 2 minutes' notice, replaced by the group
-  instance_types = [var.node_instance_type]
+  capacity_type  = "SPOT"                  # xlarge ≈ $0.071/hour on Sep 3 2026 against $0.134 on-demand; reclaimed with 2 minutes' notice, replaced by the group
+  instance_types = var.node_instance_types # several pools: spot picks the one with capacity (price-capacity-optimized)
   labels         = { "steakllm.io/pool" = "cpu" }
 
   scaling_config {
