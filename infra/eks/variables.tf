@@ -1,0 +1,53 @@
+variable "region" {
+  description = "Same region as infra/network and infra/ecr."
+  type        = string
+  default     = "us-east-1"
+}
+
+variable "project" {
+  description = "Tag value and name prefix."
+  type        = string
+  default     = "steakllm"
+}
+
+variable "cluster_name" {
+  description = "The cluster's name; infra/network tagged its subnets kubernetes.io/cluster/<this>."
+  type        = string
+  default     = "steakllm"
+}
+
+variable "cluster_version" {
+  description = "Kubernetes version. Pinned to the newest standard-support version at creation (Sep 2 2026: 1.36); bumped on purpose, one minor at a time, never left to age into extended support."
+  type        = string
+  default     = "1.36"
+}
+
+variable "admin_cidr" {
+  description = "The one address allowed to reach the cluster's public API endpoint until Step 8's tailnet exists (ADR-0008). Thomas's current address as a /32; a repository variable (TF_VAR_admin_cidr), never a file in git."
+  type        = string
+  validation {
+    condition     = can(cidrnetmask(var.admin_cidr)) && endswith(var.admin_cidr, "/32")
+    error_message = "admin_cidr must be a single IPv4 address as a /32."
+  }
+}
+
+variable "admin_principal_arn" {
+  description = "The laptop identity that gets cluster-admin through an access entry (an IAM user or role ARN; a repository variable, TF_VAR_admin_principal_arn)."
+  type        = string
+  validation {
+    condition     = can(regex("^arn:aws:iam::[0-9]{12}:(user|role)/", var.admin_principal_arn))
+    error_message = "admin_principal_arn must be an IAM user or role ARN."
+  }
+}
+
+variable "apply_role_name" {
+  description = "The pipeline's apply role (infra/bootstrap); it creates the cluster and gets an explicit access entry rather than the implicit creator-admin."
+  type        = string
+  default     = "steakllm-ci-apply"
+}
+
+variable "log_retention_days" {
+  description = "Control-plane logs in CloudWatch. 14 days is enough to debug and costs cents."
+  type        = number
+  default     = 14
+}
