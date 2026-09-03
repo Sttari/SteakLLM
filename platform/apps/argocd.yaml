@@ -1,0 +1,44 @@
+# Argo CD manages Argo CD. The chart comes from the argo-helm repository; the values come from this
+# repository (a multi-source Application: the second source is only a reference, `$values`). The
+# bootstrap drill installed the same chart with the same values by hand; from this Application on,
+# a change to platform/argocd/values.yaml on main is the only way Argo's own configuration changes.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://argoproj.github.io/argo-helm
+      chart: argo-cd
+      targetRevision: 10.7.0 # Argo CD v3.5.2; bumped on purpose (Dependabot does not read this file)
+      helm:
+        releaseName: argocd
+        valueFiles:
+          - $values/platform/argocd/values.yaml
+    - repoURL: https://github.com/Sttari/SteakLLM.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true       # large CRDs (Application, ApplicationSet) exceed the client-side annotation limit
+      - RespectIgnoreDifferences=true
+  ignoreDifferences:
+    # Argo fills these secrets at runtime (server.secretkey, the initial admin password, the redis
+    # password); the chart renders them empty. Without this the app would never read Synced.
+    - kind: Secret
+      name: argocd-secret
+      jsonPointers:
+        - /data
+    - kind: Secret
+      name: argocd-redis
+      jsonPointers:
+        - /data

@@ -1,0 +1,28 @@
+# The root of the app-of-apps: one Application that watches platform/apps/ in this repository, where
+# every file is itself an Application (Argo CD, and from Step 8 on: monitoring, Kafka, Qdrant, …).
+# Applied by hand exactly once per cluster, in the bootstrap drill (PLAN 7.5); after that, git is the
+# only way anything reaches the cluster.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io # deleting root deletes what it manages, on purpose, never by accident
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Sttari/SteakLLM.git
+    targetRevision: main
+    path: platform/apps
+    directory:
+      recurse: false # one level: the Applications themselves, not what they point at
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true    # a file removed from platform/apps removes its Application
+      selfHeal: true # a hand edit on the cluster is reverted to what git says
+    syncOptions:
+      - CreateNamespace=true
