@@ -4,6 +4,10 @@ The platform is cattle: everything below `infra/bootstrap` can be removed and re
 
 **What survives a rebuild:** the state bucket and the CI roles (`bootstrap`), the ECR images (`ecr`), everything in git. **What is lost:** every Kubernetes object including Argo CD and, in later steps, every EBS volume (Kafka log, Qdrant vectors, Prometheus history) — Step 10's backups exist for those; the NAT's Elastic IP (a new one is allocated; update any allowlist); the control-plane log group.
 
+## The everyday version (Step 8.11)
+
+`make cluster-down` at the end of a session: removes every Ingress and LoadBalancer Service first (a controller-made ALB outlives the cluster and keeps billing; none exist before Step 12), waits until `aws elbv2 describe-load-balancers` is empty, dispatches `teardown.yml` for `eks`, approves its gate, waits, prints the meter check. `make cluster-up` at the start: dispatches `apply.yml`, approves the four gates in order, refreshes kubeconfig, runs the Argo bootstrap, applies the root Application. The pre-step cannot live inside `teardown.yml`: the cluster's API is never reachable from a GitHub runner (one `/32`, then private-only), so the laptop does it.
+
 ## Order
 
 Removal runs *down* the dependency chain, rebuild runs *up* it. Each teardown is a `workflow_dispatch` of `teardown.yml` with the module name typed twice, behind the production gate; each rebuild is a `workflow_dispatch` of `apply.yml` (one gate per module) followed by the one hand step.

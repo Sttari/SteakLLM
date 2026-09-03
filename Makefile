@@ -50,3 +50,31 @@ e2e: ## the end-to-end test against the running stack: upload → summarized →
 
 demo: ## drive the sample PDF through the stack by hand: MinIO → Kafka → Ollama → Qdrant → Bedrock → catalog
 	uv run compose/demo.py
+
+# ---- the cluster, dev-time posture (Step 8.11): on while we work, off when we stop ------------------
+# cluster-up: rebuild through the pipeline (four gates), point kubectl at it, bootstrap Argo once.
+# cluster-down: remove anything a controller made outside Kubernetes (load balancers), then tear eks down.
+# Both approve the production gates from the laptop with gh — the human is the one typing make.
+ENV_ID := 21032992457
+
+cluster-up: ## rebuild the cluster (apply.yml, four gates) and bootstrap Argo CD; ~25 min
+	@gh workflow run apply.yml && sleep 30 && RUN=$$(gh run list --workflow apply --branch main --limit 1 --json databaseId --jq '.[0].databaseId') && echo "apply run $$RUN" && \
+	for gate in ecr network eks platform; do until [ "$$(gh api repos/Sttari/SteakLLM/actions/runs/$$RUN/pending_deployments --jq length)" = 1 ]; do sleep 15; done; \
+	  gh api -X POST repos/Sttari/SteakLLM/actions/runs/$$RUN/pending_deployments -F 'environment_ids[]=$(ENV_ID)' -f state=approved -f comment="cluster-up: $$gate" >/dev/null && echo "$$gate approved"; sleep 45; done && \
+	until [ "$$(gh run view $$RUN --json status --jq .status)" = completed ]; do sleep 20; done && gh run view $$RUN --json conclusion --jq '"apply: " + .conclusion'
+	aws eks update-kubeconfig --name steakllm --region us-east-1
+	helm repo add argo https://argoproj.github.io/argo-helm >/dev/null 2>&1 || true
+	helm install argocd argo/argo-cd --version 10.7.0 --namespace argocd --create-namespace -f platform/argocd/values.yaml --wait --timeout 10m
+	kubectl apply -f platform/root.yaml
+	@echo "Argo is bootstrapped; watch: kubectl -n argocd get applications -w"
+
+cluster-down: ## remove load balancers the cluster created, then tear eks down (teardown.yml, one gate); the network stays
+	@echo "Removing Ingresses and LoadBalancer Services first (an ALB outlives the cluster and keeps billing)…"
+	-kubectl get ingress -A --no-headers 2>/dev/null | awk '{print "-n "$$1" "$$2}' | xargs -r -L1 kubectl delete ingress
+	-kubectl get svc -A --field-selector spec.type=LoadBalancer --no-headers 2>/dev/null | awk '{print "-n "$$1" "$$2}' | xargs -r -L1 kubectl delete svc
+	@until [ "$$(aws elbv2 describe-load-balancers --query 'length(LoadBalancers)' --output text)" = 0 ]; do echo "waiting for load balancers to go…"; sleep 15; done
+	gh workflow run teardown.yml -f module=eks -f confirm=eks && sleep 30 && RUN=$$(gh run list --workflow teardown --limit 1 --json databaseId --jq '.[0].databaseId') && \
+	until [ "$$(gh api repos/Sttari/SteakLLM/actions/runs/$$RUN/pending_deployments --jq length)" = 1 ]; do sleep 15; done && \
+	gh api -X POST repos/Sttari/SteakLLM/actions/runs/$$RUN/pending_deployments -F 'environment_ids[]=$(ENV_ID)' -f state=approved -f comment="cluster-down" >/dev/null && echo "teardown approved" && \
+	until [ "$$(gh run view $$RUN --json status --jq .status)" = completed ]; do sleep 20; done && gh run view $$RUN --json conclusion --jq '"teardown: " + .conclusion'
+	@echo "meter check:" && aws eks describe-cluster --name steakllm --query cluster.status --output text 2>&1 | grep -oE 'ResourceNotFoundException|ACTIVE|DELETING' && echo "load balancers: $$(aws elbv2 describe-load-balancers --query 'length(LoadBalancers)' --output text) · volumes: $$(aws ec2 describe-volumes --query 'length(Volumes)' --output text)"

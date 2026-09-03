@@ -25,3 +25,4 @@ Date: YYYY-MM-DD
 | [0007](0007-nat-instance.md) | Egress through a $3 NAT instance (fck-nat) instead of a $33 NAT gateway; free gateway endpoints for S3 and DynamoDB |
 | [0008](0008-one-spot-node-and-how-argo-arrives.md) | One spot t4g.large in a managed node group; cluster API reachable from one `/32` until the tailnet; Argo CD bootstrapped once by hand, then self-managed |
 | [0009](0009-node-size-domain-embeddings.md) | One t4g.xlarge spot node for the whole platform; a Route 53 domain (zone read, not created); `all-minilm` on Ollama in the cluster as locally; Ollama image kept |
+| [0010](0010-admin-door-and-interior-walls.md) | The admin door is the tailnet; default-deny NetworkPolicies in every application room, enforced by the VPC CNI; Pod Security profiles per room |
