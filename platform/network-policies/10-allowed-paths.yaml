@@ -1,0 +1,138 @@
+# The allowed paths, one policy each, named for the path they open. Read together with docs/system-map.md.
+# Namespaces are matched by their kubernetes.io/metadata.name label; pods by the labels their charts set.
+---
+# gateway → out: Bedrock and S3 over the NAT (any address outside the VPC), Kafka, Qdrant, Ollama, and the
+# vLLM Service in its own namespace (Step 9).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: gateway-egress, namespace: steakllm }
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: gateway } }
+  policyTypes: [Egress]
+  egress:
+    - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.42.0.0/16, 169.254.169.254/32] } }] # AWS APIs via the NAT; never the node's metadata
+      ports: [{ protocol: TCP, port: 443 }]
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kafka } }, podSelector: { matchLabels: { strimzi.io/kind: Kafka } } }]
+      ports: [{ protocol: TCP, port: 9092 }]
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: qdrant } } }]
+      ports: [{ protocol: TCP, port: 6333 }]
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ollama } } }]
+      ports: [{ protocol: TCP, port: 11434 }]
+    - to: [{ podSelector: { matchLabels: { app.kubernetes.io/name: vllm } } }]
+      ports: [{ protocol: TCP, port: 8000 }]
+---
+# → gateway: Open WebUI, the summarizer (Step 10), Prometheus, the Tailscale proxy (8.9), and anything
+# in the steakllm namespace itself (the workers call the gateway's /v1).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: gateway-ingress, namespace: steakllm }
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: gateway } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: open-webui } }
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: monitoring } }
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: tailscale } }
+      ports: [{ protocol: TCP, port: 8000 }]
+---
+# workers (Step 10: ingest, embedder, summarizer, notifier) → Kafka, Qdrant, Ollama, the gateway, AWS.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: workers-egress, namespace: steakllm }
+spec:
+  podSelector: { matchLabels: { steakllm.io/role: worker } }
+  policyTypes: [Egress]
+  egress:
+    - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.42.0.0/16, 169.254.169.254/32] } }]
+      ports: [{ protocol: TCP, port: 443 }]
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kafka } }, podSelector: { matchLabels: { strimzi.io/kind: Kafka } } }]
+      ports: [{ protocol: TCP, port: 9092 }]
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: qdrant } } }]
+      ports: [{ protocol: TCP, port: 6333 }]
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ollama } } }]
+      ports: [{ protocol: TCP, port: 11434 }]
+    - to: [{ podSelector: { matchLabels: { app.kubernetes.io/name: gateway } } }]
+      ports: [{ protocol: TCP, port: 8000 }]
+---
+# → Kafka: the broker accepts the steakllm namespace, its own namespace (operator, entity operator, the
+# broker itself for KRaft), and Prometheus on the metrics port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: kafka-ingress, namespace: kafka }
+spec:
+  podSelector: { matchLabels: { strimzi.io/kind: Kafka } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: steakllm } }
+      ports: [{ protocol: TCP, port: 9092 }, { protocol: TCP, port: 9090 }, { protocol: TCP, port: 9091 }, { protocol: TCP, port: 8443 }]
+    - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: monitoring } } }]
+      ports: [{ protocol: TCP, port: 9404 }]
+---
+# Kafka namespace egress: within the namespace (operator ↔ broker ↔ entity operator) and the Kubernetes API
+# (the operator watches resources).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: kafka-egress, namespace: kafka }
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to: [{ podSelector: {} }]
+    - to: [{ ipBlock: { cidr: 10.42.0.0/16 } }] # the API server's private endpoints live in the VPC
+      ports: [{ protocol: TCP, port: 443 }]
+---
+# → Qdrant: the steakllm namespace, Prometheus (metrics on 6333), the Tailscale proxy (a Step 9 dashboard).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: qdrant-ingress, namespace: qdrant }
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: qdrant } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: steakllm } }
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: monitoring } }
+      ports: [{ protocol: TCP, port: 6333 }]
+---
+# → Ollama: the steakllm namespace, and the model-pull job in its own namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: ollama-ingress, namespace: ollama }
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: ollama } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: steakllm } }
+      ports: [{ protocol: TCP, port: 11434 }]
+---
+# Ollama egress: only the model pull needs the internet (once); the pull job talks to Ollama in-namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: ollama-egress, namespace: ollama }
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to: [{ podSelector: {} }]
+    - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.42.0.0/16, 169.254.169.254/32] } }]
+      ports: [{ protocol: TCP, port: 443 }]
+---
+# Open WebUI: reaches the gateway only; accepts the Tailscale proxy (8.9).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: open-webui-paths, namespace: open-webui }
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: tailscale } } }]
+      ports: [{ protocol: TCP, port: 8080 }]
+  egress:
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: steakllm } }, podSelector: { matchLabels: { app.kubernetes.io/name: gateway } } }]
+      ports: [{ protocol: TCP, port: 8000 }]
