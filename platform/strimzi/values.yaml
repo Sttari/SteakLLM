@@ -1,0 +1,11 @@
+# Strimzi operator (chart strimzi-kafka-operator 1.2.0): watch one namespace, one replica, small.
+watchNamespaces: []          # empty = the release namespace (kafka) only
+replicas: 1
+nodeSelector:
+  steakllm.io/pool: cpu
+resources:
+  requests: { cpu: 100m, memory: 256Mi }
+  limits: { cpu: 500m, memory: 384Mi }
+# The operator's own metrics for Prometheus (the Kafka broker's metrics come from the Kafka CR).
+dashboards:
+  enabled: false
