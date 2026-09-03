@@ -1,0 +1,28 @@
+# The gateway, from our own chart in this repository. The image tag is the value to bump on a release
+# (release.yml pushes sha-<7>; the Helm-values bump is a pull request here). Wave 4: after Kafka,
+# Qdrant and Ollama, which its readiness and its routes depend on.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gateway
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Sttari/SteakLLM.git
+    targetRevision: main
+    path: charts/gateway
+    helm:
+      releaseName: gateway
+      valuesObject:
+        image:
+          tag: sha-3432f6a
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: steakllm
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
