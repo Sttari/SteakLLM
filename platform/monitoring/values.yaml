@@ -56,6 +56,34 @@ grafana:
       searchNamespace: ALL # any ConfigMap labelled grafana_dashboard=1 becomes a dashboard (platform/monitoring/dashboards)
     datasources:
       enabled: true
+  # Dashboards from grafana.com by id, downloaded by the sidecar (egress via the NAT): Argo CD (14584),
+  # Strimzi Kafka (11962), Loki (13407). Provisioned read-only under the "platform" folder.
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: platform
+          orgId: 1
+          folder: platform
+          type: file
+          disableDeletion: true
+          editable: false
+          options:
+            path: /var/lib/grafana/dashboards/platform
+  dashboards:
+    platform:
+      argocd:
+        gnetId: 14584
+        revision: 1
+        datasource: Prometheus
+      kafka:
+        gnetId: 11962
+        revision: 1
+        datasource: Prometheus
+      loki:
+        gnetId: 13407
+        revision: 1
+        datasource: Prometheus
   additionalDataSources:
     - name: Loki
       type: loki
