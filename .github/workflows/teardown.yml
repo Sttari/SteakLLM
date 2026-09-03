@@ -24,7 +24,7 @@ permissions:
 jobs:
   teardown:
     runs-on: ubuntu-latest
-    timeout-minutes: 45         # an EKS cluster takes ~10 minutes to delete
+    timeout-minutes: 60         # an EKS cluster takes ~10 minutes to delete; a stuck node group longer
     environment: production     # the gate: the same reviewer click as apply
     concurrency:
       group: apply-${{ inputs.module }}   # shares apply's lock: never tear down while an apply is in flight
