@@ -23,6 +23,9 @@ resource "aws_eks_addon" "vpc_cni" {
   addon_version               = local.addon_versions["vpc-cni"]
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
+  # NetworkPolicy enforcement is OFF by default on EKS: policies are accepted and ignored. The
+  # network-policy agent in the VPC CNI enforces them (Step 8.10's interior doors).
+  configuration_values = jsonencode({ enableNetworkPolicy = "true" })
 }
 
 resource "aws_eks_addon" "kube_proxy" {
