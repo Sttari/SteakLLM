@@ -1,0 +1,74 @@
+# teardown.yml — "take it down, on purpose."  Removes one Terraform module's resources through the
+# same gate as apply: a human types the module's name twice, the production reviewer approves, and the
+# plan of what is lost is in the run summary before it is applied. Used by the rebuild drill (7.6) and
+# by nothing else. Bootstrap is excluded by construction (it is not a choice below).
+name: teardown
+
+on:
+  workflow_dispatch:
+    inputs:
+      module:
+        description: "Module to remove (eks first, then network; never bootstrap)"
+        type: choice
+        required: true
+        options: [eks, network]
+      confirm:
+        description: "Type the module name again to confirm what is lost"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  id-token: write               # OIDC; inside the environment the subject is environment:production
+
+jobs:
+  teardown:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45         # an EKS cluster takes ~10 minutes to delete
+    environment: production     # the gate: the same reviewer click as apply
+    concurrency:
+      group: apply-${{ inputs.module }}   # shares apply's lock: never tear down while an apply is in flight
+      cancel-in-progress: false
+    env:
+      TF_VAR_github_owner: ${{ github.repository_owner }}
+      TF_VAR_github_owner_id: ${{ github.repository_owner_id }}
+      TF_VAR_github_repo_id: ${{ github.repository_id }}
+      TF_VAR_budget_email: ${{ secrets.TF_VAR_BUDGET_EMAIL }}
+      TF_VAR_admin_cidr: ${{ vars.TF_VAR_ADMIN_CIDR }}
+      TF_VAR_admin_principal_arn: ${{ vars.TF_VAR_ADMIN_PRINCIPAL_ARN }}
+    steps:
+      - name: The name must be typed twice
+        if: inputs.confirm != inputs.module
+        run: |
+          echo "::error::confirm ('${{ inputs.confirm }}') does not match module ('${{ inputs.module }}'); nothing was touched"
+          exit 1
+
+      - uses: actions/checkout@v5
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.16.0"
+          terraform_wrapper: false
+
+      - name: Assume the apply role (OIDC, subject environment:production)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Plan the removal
+        working-directory: infra/${{ inputs.module }}
+        run: |
+          terraform init -input=false
+          terraform plan -destroy -no-color -input=false -out=tfplan | tee plan.txt
+          {
+            echo "### \`infra/${{ inputs.module }}\` — removal plan applied by this run"
+            echo '```'; tail -c 60000 plan.txt; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Apply the removal
+        working-directory: infra/${{ inputs.module }}
+        run: |
+          start=$(date +%s)
+          terraform apply -input=false -no-color tfplan
+          echo "### removed in $(( $(date +%s) - start )) s" >> "$GITHUB_STEP_SUMMARY"
