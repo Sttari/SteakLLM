@@ -36,6 +36,24 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 | Sep 2 2026 | Embedding server is **Ollama**, not TEI; contract = OpenAI `/v1/embeddings` | TEI has no arm64 image on any tag and the cluster's CPU node is Graviton; Ollama is arm64-native on both laptop and cluster. Decided Step 5.1; ADR-0005 |
 | Sep 1 2026 | **Repo public from Step 3.5** (supersedes the above) | Environment protection rules (the human apply gate) are free only on public repos (Incident 11). Pre-flight: full-history gitleaks clean, `budget_email` marked sensitive, personal addresses scrubbed from prose. Alternatives rejected: GitHub Pro ($4/mo) for a feature the public path gives free; dropping the gate |
 
+**Step 8 memory budget, one t4g.xlarge (16 GiB; ≈ 14.5 usable after kubelet and system reservations), requests in GiB — predicted Sep 3 2026, checked against `kubectl top pods -A` in 8.4:**
+
+| Component | Requested | Note |
+|---|---|---|
+| Argo CD (5 pods) | 1.1 | limits 1 GiB controller |
+| Kafka (Strimzi, 1 node) + operator | 1.5 | 1 GiB heap + operator 0.3 |
+| Prometheus + Grafana + Alertmanager + exporters | 1.5 | 15-day retention |
+| Loki + Alloy | 0.6 | single binary |
+| Qdrant | 0.3 | grows with vectors |
+| Ollama + `all-minilm` | 0.8 | model ≈ 90 MB, runtime overhead |
+| Open WebUI | 0.7 | |
+| ESO + LB controller + Tailscale + CoreDNS + metrics-server + EBS CSI | 0.6 | |
+| **Platform total** | **≈ 7.1** | of 14.5 |
+| Five workers (Step 10) | ≈ 1.5 | 0.3 each |
+| **With workers** | **≈ 8.6** | ≈ 6 GiB headroom; a t4g.large (7.4 usable) would have had none |
+
+Decision Sep 3 2026 (Thomas): domain registered in Route 53 (`.com` $16/yr or `.dev` $17/yr, both available at the time); node t4g.xlarge spot ($0.071/h at decision time, above the $0.053 estimate); Tailscale account exists; embeddings `all-minilm`. ADR-0009.
+
 ## 3. Incident log
 
 **Incident 1 — `brew install … tflint`: "No available formula with the name tflint"** (Aug 28 2026, Step 1.2)

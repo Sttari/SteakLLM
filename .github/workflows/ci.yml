@@ -44,6 +44,18 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "1"
 
+  # Kubernetes manifests and Helm charts: kube-linter (missing limits, probes, non-root, latest tags…),
+  # the checkov of the cluster side. charts/ joins the paths in Step 8.8 when the first chart exists.
+  kube-linter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: stackrox/kube-linter-action@v1.0.7
+        with:
+          directory: platform
+          config: .kube-linter.yaml
+
   # Formatting and internal consistency of every Terraform module.
   # -backend=false: validate without touching S3 state, so no AWS credentials needed.
   terraform:
