@@ -1,7 +1,9 @@
+# Strimzi 1.x serves the kafka.strimzi.io/v1 API only (v1beta2 is gone; Incident 29), and is KRaft-only,
+# so the kraft/node-pools annotations are no longer needed.
 # One KRaft node that is both controller and broker (a "combined" node pool), 20 Gi gp3, a 1 GiB heap.
 # The same settings as compose/: plain internal listener on 9092, no topic auto-creation, replication 1.
 # Bootstrap address for the services: steakllm-kafka-bootstrap.kafka.svc:9092
-apiVersion: kafka.strimzi.io/v1beta2
+apiVersion: kafka.strimzi.io/v1
 kind: KafkaNodePool
 metadata:
   name: combined
@@ -31,14 +33,11 @@ spec:
         labels:
           steakllm.io/component: kafka
 ---
-apiVersion: kafka.strimzi.io/v1beta2
+apiVersion: kafka.strimzi.io/v1
 kind: Kafka
 metadata:
   name: steakllm
   namespace: kafka
-  annotations:
-    strimzi.io/kraft: enabled
-    strimzi.io/node-pools: enabled
 spec:
   kafka:
     listeners:
