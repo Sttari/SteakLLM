@@ -52,7 +52,7 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 | Five workers (Step 10) | ≈ 1.5 | 0.3 each |
 | **With workers** | **≈ 8.6** | ≈ 6 GiB headroom; a t4g.large (7.4 usable) would have had none |
 
-Decision Sep 3 2026 (Thomas): domain registered in Route 53 (`.com` $16/yr or `.dev` $17/yr, both available at the time); node t4g.xlarge spot ($0.071/h at decision time, above the $0.053 estimate); Tailscale account exists; embeddings `all-minilm`. ADR-0009.
+Decision Sep 3 2026 (Thomas): the public door (domain, certificate, WAF, ALB) waits until everything else is ready — Step 12 (`.com` $16/yr or `.dev` $17/yr were available at the time); node t4g.xlarge spot ($0.071/h at decision time, above the $0.053 estimate); Tailscale account exists; embeddings `all-minilm`. ADR-0009.
 
 ## 3. Incident log
 
