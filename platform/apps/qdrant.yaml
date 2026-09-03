@@ -1,0 +1,30 @@
+# Qdrant, the vector shelf: one replica on a 10 Gi gp3 volume, ClusterIP only. No API key inside the
+# cluster for now (the local stack has none either); the room's NetworkPolicies (8.10) decide who may
+# knock, and a key is a Step 10 hardening item. Wave 3.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: qdrant
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: default
+  sources:
+    - repoURL: https://qdrant.github.io/qdrant-helm
+      chart: qdrant
+      targetRevision: 1.19.0
+      helm:
+        releaseName: qdrant
+        valueFiles:
+          - $values/platform/qdrant/values.yaml
+    - repoURL: https://github.com/Sttari/SteakLLM.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: qdrant
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
