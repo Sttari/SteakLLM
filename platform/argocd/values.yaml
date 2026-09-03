@@ -1,0 +1,60 @@
+# Argo CD (chart argo-cd 10.7.0 → Argo CD v3.5.2). Two consumers of this file, with identical results:
+#   1. the bootstrap drill: `helm install argocd argo/argo-cd --version 10.7.0 -n argocd -f platform/argocd/values.yaml`
+#   2. Argo itself, through platform/apps/argocd.yaml, from then on.
+# Keep both in step: a value here is what the cluster runs.
+
+global:
+  # Every Argo pod on the always-on CPU node; the GPU node (Step 9) is tainted and never runs platform pods.
+  nodeSelector:
+    steakllm.io/pool: cpu
+
+configs:
+  params:
+    # No TLS on the server pod: it is reached through `kubectl port-forward` now and the tailnet in
+    # Step 8, never from the internet. TLS terminates elsewhere.
+    server.insecure: true
+  cm:
+    # How often Argo re-reads git without a webhook (a public repo gets no webhook secret from us yet).
+    timeout.reconciliation: 180s
+    # Health of Applications managed by the root app (app-of-apps): treat "Progressing" children as progressing.
+    resource.customizations.health.argoproj.io_Application: |
+      hs = {}
+      hs.status = "Progressing"
+      hs.message = ""
+      if obj.status ~= nil then
+        if obj.status.health ~= nil then
+          hs.status = obj.status.health.status
+          if obj.status.health.message ~= nil then
+            hs.message = obj.status.health.message
+          end
+        end
+      end
+      return hs
+
+# Single sign-on and notifications are Step 8/11 concerns; off saves ~200 MiB on an 8 GiB node.
+dex:
+  enabled: false
+notifications:
+  enabled: false
+
+# Requests are what the scheduler reserves; limits are the ceiling. Sized for one small cluster.
+controller:
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: "1", memory: 1Gi }
+repoServer:
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+server:
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+applicationSet:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { cpu: 200m, memory: 256Mi }
+redis:
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 200m, memory: 256Mi }
