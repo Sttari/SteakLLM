@@ -217,6 +217,8 @@ Chaos drill 1 (6.11, Sep 2 2026): 10 documents, embedder killed with 1 indexed; 
 
 Image scans (6.12, Sep 2 2026, Trivy 0.74.0): `steakllm/gateway:local` — **0 fixable CRITICALs** (the release gate), 5 CRITICALs with no fix in Debian 12.15's base (`libsqlite3-0`, `perl-base` ×3, `zlib1g`; listed, not fatal, `ignore-unfixed`); config scan of the five Dockerfiles: **0 misconfigurations** at HIGH/CRITICAL. Bootstrap plan for the release role: 2 to add, 0 to change; checkov 77 passed / 0 failed.
 
+Rebuild drill (7.6, Sep 3 2026): **40 min** from first teardown dispatch to Argo Synced on the new cluster — remove eks 10 min (control plane 3 m 23 s), remove network 3 min (NAT instance 1 m 21 s), rebuild 22 min incl. three approval waits (network 44 s, cluster **13 m 22 s**, node group 1 m 58 s), bootstrap ≈ 1 min, Argo adopted itself in ≈ 1.5 min; self-heal 6 s both times. The NAT's EIP changed (54.163.228.48 → 54.235.98.175). Runbook: `docs/runbooks/cluster-rebuild.md`.
+
 Step 7 builds (Sep 2–3 2026, all through `apply.yml`): `network` 28 resources in **~2 min** (endpoints the slowest at 7 s); NAT fix 2 add / 3 destroy in ~4 min (ASG drain 3 m 6 s); `eks` control plane 8 resources, the cluster itself **10 m 36 s**; node + add-ons 15 resources in **~3 min** (node group 1 m 57 s; vpc-cni/kube-proxy/pod-identity 7 s each before the node; coredns 14 s, metrics-server 35 s, ebs-csi 46 s after). Node at rest: 52m CPU (2 %), 605 Mi (8 %) of a t4g.large. Spot price t4g.large us-east-1a at build time: $0.0265/h. GitHub hosted-runner queue: usually seconds, once 11 minutes.
 
 First release (6.12, Sep 2 2026, run 33684077969 on `main` at `3432f6a`): five jobs in parallel, **128–154 s** each (amd64 build + Trivy + arm64 under QEMU + push); images in ECR as OCI indexes with `linux/arm64` + `linux/amd64`, **96–104 MiB compressed** (gateway 103.5, the four consumers 95.9 — the 422–460 MB local figure is the uncompressed layer sum); Trivy: 0 fixable CRITICALs in every image; tag `sha-3432f6a`, immutable.
@@ -238,6 +240,10 @@ First pipeline apply: **2026-09-01T20:18:17Z** — `infra/ecr`, 10 resources, by
 - One bad test file tripped two independent gates (fmt's formatting, tflint's dead-code rule) — layered checks each catch their own concern.
 - Measure the stop, not the signal handler: grace period ≥ one unit of work, and commit only what you handled.
 - Idempotent consumers make duplicates safe, not free; stop the duplicate at the producer when it can tell.
+- Every "it will fetch/attach/register itself on boot" design has a first packet; draw where it goes before trusting the loop (Incident 26).
+- When CloudTrail is silent, the call never left the box: look at connectivity before permissions.
+- A reviewer approves a plan, not a run: one gate per module is a feature, and a loop makes it painless.
+- A cluster you have not rebuilt from git is a pet; the number (40 min) belongs in the README, and it will drift — measure it again after Step 8.
 - zsh does not word-split a variable holding a command (`$C build …` fails "no such file"); use a shell function. Likewise `${PIPESTATUS[0]}` is bash; zsh spells it `$pipestatus[1]` — write the command's output to a file and read `$?` instead.
 
 
@@ -261,6 +267,9 @@ Everything that went sideways for a minute or more, whether or not it earned an 
 - `boto3` on the laptop resolved the AWS profile from the local env file (`AWS_PROFILE=default`) and sent real-account keys to MinIO (*InvalidAccessKeyId*). → Inside containers the compose env carries MinIO's keys; on the laptop use `docker exec minio mc …`, or read the evidence from a service's log instead of listing the bucket.
 - Trivy's config scan on the laptop walked every `.venv` and reported boto3's JSON as CloudFormation — noise, not findings. → `--skip-dirs '**/.venv'` locally; CI has no venvs.
 - The drill printed "STOPED": `f"{SIGNAL.upper()}ED"`. → A small mapping. Cosmetic, but a report copies it.
+- The `!` prompt in Claude Code stops a command after 2 minutes; anything that waits on a gate or an EKS create must run in a normal terminal (Thomas) or be polled in short calls (me).
+- `kubectl run --rm -i` on a container that exits at once prints "couldn't attach … falling back to streaming logs": harmless, the output still arrives.
+- Right after `kubectl apply -f platform/root.yaml`, `get application` can answer "the server doesn't have a resource type" for a few seconds while the CRD registers; retry, do not diagnose.
 - Fixing the "STOPED" line by string replacement failed twice: `ruff format` had already wrapped the `print(` call over three lines, so the exact text no longer existed, and the second attempt inserted the new statement *inside* the wrapped call (a syntax error the pre-commit hook caught). → Look at the current lines before a replacement, and insert relative to the statement's first line, not the line that holds the match.
 - `apply.yml` runs its module matrix one job at a time, and every job references the `production` environment, so GitHub asks for one approval *per module*: the first click released `apply (ecr)` and `apply (network)` then waited at its own gate. Either keep it (each module explicitly approved) or fold the matrix into one job with one gate; decided in 7.7. → Meanwhile: one `pending_deployments` call per module.
 - `gh run watch` on a run whose next job is *waiting* at a gate blocks forever (ten minutes lost to a tool timeout). → Poll `gh run view --json jobs` and read the status first; watch only a job that is `in_progress`.

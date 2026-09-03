@@ -1,0 +1,16 @@
+# infra — AWS from code, one module per concern
+
+Every module has its own state key in the shared bucket and is applied by the pipeline behind the `production` gate, **except `bootstrap`**, the one module applied from the laptop (it creates the bucket and the roles the pipeline needs). Modules are applied in dependency order; `apply.yml`'s matrix is that order.
+
+| Module | State key | Applied by | Depends on | What it makes | Monthly cost |
+|---|---|---|---|---|---|
+| `bootstrap` | `bootstrap/terraform.tfstate` | the laptop, by hand (ADR-0003) | — | state bucket, GitHub OIDC provider, the plan / apply / release roles, budgets | $0 |
+| `ecr` | `ecr/terraform.tfstate` | `apply.yml` | bootstrap | five image repositories, immutable tags, lifecycle rules | ≈ $0.15 |
+| `network` | `network/terraform.tfstate` | `apply.yml` | bootstrap | VPC, subnets, IGW, NAT instance + EIP, S3 and DynamoDB endpoints (ADR-0007) | ≈ $7 |
+| `eks` | `eks/terraform.tfstate` | `apply.yml` | network (remote state) | the cluster, one spot node, six add-ons, access entries (ADR-0008) | ≈ $95 |
+
+**Gates.** Each matrix job references the `production` environment, so every module is approved separately, in order — one click per module, with that module's plan in the run summary above the click. This is deliberate (recorded in ADR-0003's amendment): a reviewer approves a plan, not a run.
+
+**Removal.** `teardown.yml` removes one module (`eks` or `network`; `bootstrap` is not a choice) behind the same gate, with the name typed twice. The rebuild runbook: `docs/runbooks/cluster-rebuild.md` (measured: 40 minutes from nothing to Argo Synced).
+
+**Read-only checks the plan role can run:** `terraform plan` for any module, from any branch or pull request (`plan.yml` posts one sticky comment per module).

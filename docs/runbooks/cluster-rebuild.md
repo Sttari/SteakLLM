@@ -10,14 +10,14 @@ Removal runs *down* the dependency chain, rebuild runs *up* it. Each teardown is
 
 | # | Action | How | Expect | Measured (7.6) |
 |---|---|---|---|---|
-| 1 | Remove the cluster (node group, add-ons, control plane, log group, roles) | `gh workflow run teardown.yml -f module=eks -f confirm=eks` → approve | ~10–12 min (the control plane is slow to delete) | — |
-| 2 | Remove the network (NAT instance, EIP, endpoints, subnets, VPC) | `gh workflow run teardown.yml -f module=network -f confirm=network` → approve | ~2–3 min | — |
-| 3 | Rebuild both | `gh workflow run apply.yml` → approve ecr, network, eks in turn | network ~2 min, eks ~11 + ~3 min | — |
-| 4 | Point the laptop at the new cluster | `aws eks update-kubeconfig --name steakllm --region us-east-1` | `kubectl get nodes` → one Ready node | — |
-| 5 | The one hand step: bootstrap Argo CD (see `platform/README.md`) | `helm install … --wait && kubectl apply -f platform/root.yaml` | ~1 min; `root` and `argocd` Synced/Healthy within ~2 min | — |
-| 6 | Confirm | `kubectl -n argocd get applications`; egress drill from `PLAN.md` 7.4 | all Synced/Healthy; NAT EIP printed | — |
+| 1 | Remove the cluster (node group, add-ons, control plane, log group, roles) | `gh workflow run teardown.yml -f module=eks -f confirm=eks` → approve | ~10–12 min (the control plane is slow to delete) | 10 min (dispatch 01:30:34Z → done 01:40:52Z; the control plane 3 m 23 s of it) |
+| 2 | Remove the network (NAT instance, EIP, endpoints, subnets, VPC) | `gh workflow run teardown.yml -f module=network -f confirm=network` → approve | ~2–3 min | 3 min (27 resources; the NAT instance 1 m 21 s) |
+| 3 | Rebuild both | `gh workflow run apply.yml` → approve ecr, network, eks in turn | network ~2 min, eks ~11 + ~3 min | 22 min with gate waits (dispatch 01:44:42Z → eks done 02:06:58Z): ecr 11 s, network 44 s, cluster 13 m 22 s, node group 1 m 58 s |
+| 4 | Point the laptop at the new cluster | `aws eks update-kubeconfig --name steakllm --region us-east-1` | `kubectl get nodes` → one Ready node | seconds |
+| 5 | The one hand step: bootstrap Argo CD (see `platform/README.md`) | `helm install … --wait && kubectl apply -f platform/root.yaml` | ~1 min; `root` and `argocd` Synced/Healthy within ~2 min | release deployed 02:09:47Z; both Synced/Healthy by 02:11:14Z |
+| 6 | Confirm | `kubectl -n argocd get applications`; egress drill from `PLAN.md` 7.4 | all Synced/Healthy; NAT EIP printed | Synced/Healthy; self-heal 6 s; egress pod saw the new EIP 54.235.98.175 |
 
-**Total, first measurement (Sep 2026):** — (filled by 7.6).
+**Total, first measurement (Sep 3 2026):** **40 minutes** from the first dispatch to Argo Synced on the new cluster (01:30:34Z → 02:10:35Z), of which about 14 minutes removing, 22 rebuilding (three approval waits included), 2 bootstrapping. The variable part is EKS itself: 10 m 36 s to create the first time, 13 m 22 s the second.
 
 ## Before removing anything
 

@@ -1,6 +1,6 @@
 # 0008 — One spot node in a managed node group; the cluster API reachable from one address until the tailnet exists; Argo CD bootstrapped once by hand
 
-Status: proposed (accepted when Step 7.5 is done)
+Status: accepted (Sep 3 2026, after the 7.5 bootstrap drill and the 7.6 rebuild)
 Date: 2026-09-02
 
 ## Context
