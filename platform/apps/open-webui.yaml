@@ -1,0 +1,29 @@
+# Open WebUI, the chat window, pointed at the gateway's future Service (8.8). No ingress: it is
+# reached over the tailnet in 8.9. Wave 4 (after the gateway's keys exist in its namespace).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: open-webui
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  project: default
+  sources:
+    - repoURL: https://helm.openwebui.com
+      chart: open-webui
+      targetRevision: 16.5.0
+      helm:
+        releaseName: open-webui
+        valueFiles:
+          - $values/platform/open-webui/values.yaml
+    - repoURL: https://github.com/Sttari/SteakLLM.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: open-webui
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

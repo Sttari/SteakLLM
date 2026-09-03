@@ -1,0 +1,136 @@
+# Ollama 0.33.3 on the CPU node. The volume keeps the pulled model across restarts and re-syncs; the
+# 7 GB image (ADR-0005/0009) is pulled once per node. Runs as a non-root user under the restricted
+# Pod Security profile: the binary needs nothing the profile forbids.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-models
+  namespace: ollama
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: gp3
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: ollama
+  labels:
+    app.kubernetes.io/name: ollama
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # one volume, one pod
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ollama
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ollama
+    spec:
+      nodeSelector:
+        steakllm.io/pool: cpu
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ollama
+          image: ollama/ollama:0.33.3
+          ports:
+            - name: http
+              containerPort: 11434
+          env:
+            - { name: OLLAMA_HOST, value: "0.0.0.0:11434" }
+            - { name: OLLAMA_KEEP_ALIVE, value: "-1" } # keep the model loaded; the first request must not pay the load
+            - { name: OLLAMA_MODELS, value: /models }
+            - { name: HOME, value: /models } # ollama writes its keys under $HOME
+          volumeMounts:
+            - { name: models, mountPath: /models }
+            - { name: tmp, mountPath: /tmp }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "2", memory: 1536Mi }
+          readinessProbe:
+            httpGet: { path: /api/version, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/version, port: http }
+            periodSeconds: 30
+            initialDelaySeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: ollama-models
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+  namespace: ollama
+  labels:
+    app.kubernetes.io/name: ollama
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ollama
+  ports:
+    - name: http
+      port: 11434
+      targetPort: http
+---
+# Pull the model once per volume, after every sync (idempotent: a pulled model is a no-op).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ollama-pull-all-minilm
+  namespace: ollama
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 6
+  template:
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        steakllm.io/pool: cpu
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pull
+          image: public.ecr.aws/docker/library/alpine:3.20
+          command:
+            - sh
+            - -c
+            - |
+              until wget -qO- http://ollama.ollama.svc:11434/api/version; do echo waiting; sleep 5; done
+              wget -qO- --post-data='{"name":"all-minilm","stream":false}' --header='Content-Type: application/json' http://ollama.ollama.svc:11434/api/pull
+              wget -qO- http://ollama.ollama.svc:11434/api/tags
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { cpu: 100m, memory: 64Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]

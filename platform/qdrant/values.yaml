@@ -1,0 +1,27 @@
+# Qdrant (chart 1.19.0): one node, gp3 disk, reached as http://qdrant.qdrant.svc:6333 (same port as compose/).
+replicaCount: 1
+persistence:
+  size: 10Gi
+  storageClassName: gp3
+resources:
+  requests: { cpu: 100m, memory: 256Mi }
+  limits: { cpu: "1", memory: 1Gi }
+nodeSelector:
+  steakllm.io/pool: cpu
+service:
+  type: ClusterIP
+# restricted Pod Security: the chart already runs as uid 1000 with a read-only root and no capabilities.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+metrics:
+  serviceMonitor:
+    enabled: true

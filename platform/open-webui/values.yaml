@@ -1,0 +1,34 @@
+# Open WebUI (chart 16.5.0): one replica, a 2 Gi gp3 volume for its database, talking only to the
+# gateway (same settings as compose/: OPENAI_API_BASE_URL → the gateway, RESET_CONFIG_ON_START).
+replicaCount: 1
+ollama:
+  enabled: false # the bundled Ollama is not ours; embeddings come from platform/ollama via the gateway
+pipelines:
+  enabled: false
+tika:
+  enabled: false
+openaiBaseApiUrl: http://gateway.steakllm.svc:8000/v1
+extraEnvVars:
+  - name: OPENAI_API_KEY
+    valueFrom:
+      secretKeyRef:
+        name: gateway-keys # synced into this namespace by secret-stores (steakllm/gateway)
+        key: api_key
+  - name: RESET_CONFIG_ON_START
+    value: "true"
+  - name: ENABLE_OPENAI_API
+    value: "true"
+  - name: ENABLE_OLLAMA_API
+    value: "false"
+persistence:
+  enabled: true
+  size: 2Gi
+  storageClass: gp3
+service:
+  type: ClusterIP
+  port: 80
+resources:
+  requests: { cpu: 100m, memory: 512Mi }
+  limits: { cpu: "1", memory: 1Gi }
+nodeSelector:
+  steakllm.io/pool: cpu
