@@ -1,0 +1,19 @@
+# Tailscale operator (chart tailscale-operator 1.102.3): the admin door. The OAuth client comes from
+# Secrets Manager (steakllm/tailscale) through the ExternalSecret in platform/pending/tailscale.yaml,
+# which also carries the Application — both move into place once the slot is filled (8.9).
+oauth:
+  # populated from the Secret "operator-oauth" (keys client_id, client_secret) — not from values
+  clientId: ""
+  clientSecret: ""
+operatorConfig:
+  hostname: steakllm-k8s-operator
+  nodeSelector:
+    steakllm.io/pool: cpu
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+    limits: { cpu: 200m, memory: 128Mi }
+proxyConfig:
+  defaultTags: tag:k8s
+  defaultProxyClass: cpu
+apiServerProxyConfig:
+  mode: "noauth" # kubectl over the tailnet with the cluster's own auth (access entries), not Tailscale's

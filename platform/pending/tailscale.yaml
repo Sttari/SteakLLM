@@ -1,0 +1,52 @@
+# PENDING (8.9): move this file to platform/apps/ and the ExternalSecret below to platform/secret-stores/
+# once `steakllm/tailscale` holds {"client_id": …, "client_secret": …} (Thomas, from his terminal):
+#   aws secretsmanager put-secret-value --secret-id steakllm/tailscale --secret-string '{"client_id":"…","client_secret":"…"}'
+# Argo would otherwise show the operator Degraded (no OAuth secret) and root Degraded with it.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: operator-oauth
+  namespace: tailscale
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: aws-secrets-manager
+  target:
+    name: operator-oauth
+    creationPolicy: Owner
+  dataFrom:
+    - extract:
+        key: steakllm/tailscale
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tailscale
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  sources:
+    - repoURL: https://pkgs.tailscale.com/helmcharts
+      chart: tailscale-operator
+      targetRevision: 1.102.3
+      helm:
+        releaseName: tailscale-operator
+        valueFiles:
+          - $values/platform/tailscale/values.yaml
+        # the chart reads the OAuth client from values; pass the synced Secret's keys through instead
+        parameters:
+          - name: oauthSecretVolume.secret.secretName
+            value: operator-oauth
+    - repoURL: https://github.com/Sttari/SteakLLM.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tailscale
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
