@@ -1,0 +1,23 @@
+# Storage classes: gp3 (encrypted, expandable) becomes the default; the gp2 class EKS ships is taken
+# into git so its "default" annotation can be turned off through Argo, not by hand.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: storage
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Sttari/SteakLLM.git
+    targetRevision: main
+    path: platform/storage
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true # adopt the existing gp2 object instead of fighting its owner

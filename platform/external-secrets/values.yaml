@@ -1,0 +1,24 @@
+# External Secrets Operator (chart external-secrets 2.10.0).
+installCRDs: true
+
+# The service account name is what infra/platform's Pod Identity association binds to:
+# external-secrets/external-secrets → role steakllm-external-secrets. No annotation needed.
+serviceAccount:
+  create: true
+  name: external-secrets
+
+global:
+  nodeSelector:
+    steakllm.io/pool: cpu
+
+resources:
+  requests: { cpu: 50m, memory: 96Mi }
+  limits: { cpu: 300m, memory: 256Mi }
+webhook:
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+    limits: { cpu: 200m, memory: 128Mi }
+certController:
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+    limits: { cpu: 200m, memory: 128Mi }
