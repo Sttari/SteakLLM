@@ -1,0 +1,28 @@
+# vLLM, from our own chart, at zero replicas (ADR-0011). Nothing runs and no GPU node exists until the
+# Deployment is scaled: by hand in the 9.5 summon drill, by KEDA from 9.6. Wave 5, beside the gpu-pool rules.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vllm
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Sttari/SteakLLM.git
+    targetRevision: main
+    path: charts/vllm
+    helm:
+      releaseName: vllm
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: steakllm
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers: [/spec/replicas] # the summon (drill, then KEDA) owns the replica count, not git

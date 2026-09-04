@@ -1,0 +1,6 @@
+apiVersion: v2
+name: vllm
+description: SteakLLM vLLM — Qwen2.5-7B-Instruct on the GPU pool, OpenAI-compatible on vllm.steakllm.svc:8000; zero replicas until summoned
+type: application
+version: 0.1.0
+appVersion: "v0.28.0"

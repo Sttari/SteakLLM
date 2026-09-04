@@ -1,0 +1,115 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vllm.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: Recreate # one GPU: a rolling update would ask for a second machine
+  selector:
+    matchLabels:
+      {{- include "vllm.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "vllm.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.tolerations | nindent 8 }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      initContainers:
+        # The weights, S3 → the node's NVMe, over the S3 gateway endpoint (in-VPC, free). sync is idempotent:
+        # a restarted pod on the same node copies nothing.
+        - name: weights
+          image: {{ .Values.weights.image }}
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              aws s3 sync --only-show-errors "s3://{{ .Values.weights.bucket }}/{{ .Values.weights.prefix }}" "/models/{{ .Values.weights.prefix }}"
+              echo "weights on the node: $(du -sh /models/{{ .Values.weights.prefix }} | cut -f1) in $(ls /models/{{ .Values.weights.prefix }} | wc -l) files"
+          env:
+            - { name: AWS_REGION, value: us-east-1 }
+            - { name: HOME, value: /tmp } # the CLI keeps its credential cache under HOME
+          resources:
+            {{- toYaml .Values.weightsResources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - { name: models, mountPath: /models }
+            - { name: tmp, mountPath: /tmp }
+      containers:
+        - name: vllm
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # the image's entrypoint is `vllm serve`; these are its arguments
+          args:
+            - /models/{{ .Values.weights.prefix | trimSuffix "/" }}
+            - --served-model-name
+            - {{ .Values.model.name }}
+            - {{ .Values.model.alias }}
+            - --max-model-len
+            - {{ .Values.model.maxModelLen | quote }}
+            - --gpu-memory-utilization
+            - {{ .Values.model.gpuMemoryUtilization | quote }}
+            - --dtype
+            - {{ .Values.model.dtype }}
+            - --host
+            - 0.0.0.0
+            - --port
+            - {{ .Values.service.port | quote }}
+            - --disable-log-requests
+          env:
+            - { name: HOME, value: /tmp }
+            - { name: VLLM_CACHE_ROOT, value: /tmp/vllm }
+            - { name: HF_HOME, value: /tmp/hf }
+            - { name: HF_HUB_OFFLINE, value: "1" } # the weights are local; never phone Hugging Face
+            - { name: TRITON_CACHE_DIR, value: /tmp/triton }
+            - { name: TORCHINDUCTOR_CACHE_DIR, value: /tmp/inductor }
+            - { name: VLLM_NO_USAGE_STATS, value: "1" }
+            - { name: DO_NOT_TRACK, value: "1" }
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+            failureThreshold: {{ .Values.probes.startupFailureThreshold }}
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - { name: models, mountPath: /models, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+            - { name: shm, mountPath: /dev/shm }
+      volumes:
+        - name: models
+          emptyDir:
+            sizeLimit: {{ .Values.weights.sizeLimit }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 10Gi # compile caches
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
