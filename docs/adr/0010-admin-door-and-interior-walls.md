@@ -1,6 +1,6 @@
 # 0010 — The admin door is the tailnet; the interior walls are default-deny NetworkPolicies
 
-Status: proposed (accepted when 8.9 closes the interim endpoint and 8.10's blocked path is proven)
+Status: accepted (Sep 4 2026: the endpoint is private-only and the blocked path is proven)
 Date: 2026-09-03
 
 ## Context
