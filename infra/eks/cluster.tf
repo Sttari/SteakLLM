@@ -116,3 +116,15 @@ resource "aws_ec2_tag" "cluster_sg_discovery" {
   key         = "karpenter.sh/discovery"
   value       = var.project
 }
+
+# The private API endpoint sits behind the cluster security group, which admits only the cluster's own
+# members. The bootstrap tunnel arrives from the NAT instance (Session Manager port-forward, Incident 34),
+# so the VPC's range may reach 443 — IAM still decides who gets in.
+resource "aws_vpc_security_group_ingress_rule" "api_from_vpc" {
+  security_group_id = aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
+  description       = "Kubernetes API from inside the VPC: the bootstrap tunnel via the NAT instance"
+  cidr_ipv4         = data.terraform_remote_state.network.outputs.vpc_cidr
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+}
