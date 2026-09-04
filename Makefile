@@ -4,7 +4,7 @@
 COMPOSE := docker compose --env-file .env --profile services -f compose/compose.yaml
 
 help: ## list targets
-	@grep -E "^[a-z]+:.*## " $(MAKEFILE_LIST) | awk -F ":.*## " '{printf "  %-8s %s\n", $$1, $$2}'
+	@grep -E "^[a-z-]+:.*## " $(MAKEFILE_LIST) | awk -F ":.*## " '{printf "  %-16s %s\n", $$1, $$2}'
 
 lint: ## run every pre-commit hook on the whole tree
 	pre-commit run --all-files
@@ -84,7 +84,26 @@ bootstrap-argo: ## the one hand step, through an SSM tunnel: helm install argocd
 	aws eks update-kubeconfig --name steakllm --region us-east-1
 	@echo "Argo is bootstrapped; the tailnet carries kubectl from here: kubectl -n argocd get applications -w"
 
+# The GPU pool's part of cluster-down (9.7). Karpenter cannot clean up a node after Karpenter is gone, so
+# the pool must be empty before eks is torn down: KEDA is paused at 0 (a plain `scale` would be reverted
+# within a poll), vLLM goes to 0, the NodeClaims are removed (Karpenter terminates the machine now, not
+# after consolidateAfter), and gpu-check refuses to go on while any GPU instance still exists.
+gpu-check: ## refuse (exit 1) while a GPU-pool EC2 instance exists — the gate cluster-down runs after gpu-down
+	@n=$$(aws ec2 describe-instances --filters Name=tag:karpenter.sh/nodepool,Values=gpu Name=instance-state-name,Values=pending,running,stopping,stopped --query 'length(Reservations[].Instances[])' --output text); \
+	if [ "$$n" != "0" ]; then echo "REFUSING: $$n GPU instance(s) still exist — Karpenter must remove them while it is alive (make gpu-down), or the reaper: aws lambda invoke --function-name steakllm-gpu-reaper /dev/stdout"; exit 1; fi; \
+	echo "GPU pool empty: no instance tagged karpenter.sh/nodepool=gpu."
+
+gpu-down: ## empty the GPU pool through KEDA and Karpenter (pause at 0, scale 0, remove NodeClaims, wait), then gpu-check
+	@echo "0/4 GPU pool: pausing KEDA at 0, vLLM to 0, removing NodeClaims…"
+	-kubectl -n steakllm annotate scaledobject vllm autoscaling.keda.sh/paused-replicas=0 --overwrite
+	-kubectl -n steakllm scale deploy vllm --replicas=0
+	-kubectl delete nodeclaims --all --wait=false
+	@n=0; until [ -z "$$(kubectl get nodeclaims --no-headers 2>/dev/null)" ] || [ $$n -ge 40 ]; do echo "waiting for Karpenter to remove the GPU node…"; sleep 15; n=$$((n+1)); done
+	@n=0; until [ "$$(aws ec2 describe-instances --filters Name=tag:karpenter.sh/nodepool,Values=gpu Name=instance-state-name,Values=pending,running,shutting-down,stopping --query 'length(Reservations[].Instances[])' --output text)" = 0 ] || [ $$n -ge 20 ]; do echo "waiting for the GPU instance to terminate…"; sleep 15; n=$$((n+1)); done
+	$(MAKE) gpu-check
+
 cluster-down: ## take the workloads down through Argo, remove their volumes, then tear eks down (teardown.yml, one gate); the network stays
+	$(MAKE) gpu-down
 	@echo "1/4 Removing Ingresses and LoadBalancer Services (an ALB outlives the cluster and keeps billing)…"
 	-kubectl get ingress -A --no-headers 2>/dev/null | awk '{print "-n "$$1" "$$2}' | xargs -r -L1 kubectl delete ingress
 	-kubectl get svc -A --field-selector spec.type=LoadBalancer --no-headers 2>/dev/null | awk '{print "-n "$$1" "$$2}' | xargs -r -L1 kubectl delete svc
