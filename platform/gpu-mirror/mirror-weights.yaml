@@ -1,0 +1,98 @@
+# Qwen2.5-7B-Instruct → s3://steakllm-models-066591056087/qwen2.5-7b-instruct/ (15.2 GB, once).
+# Stage 1 (init): if the bucket already has the model's config.json, exit; otherwise download the
+# safetensors and tokenizer files from Hugging Face into a scratch volume on the node's disk.
+# Stage 2 (main): s5cmd sync the scratch directory to the bucket over the S3 gateway endpoint.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mirror-weights
+  namespace: steakllm
+  annotations:
+    ignore-check.kube-linter.io/no-liveness-probe: "one-shot job"
+    ignore-check.kube-linter.io/no-readiness-probe: "one-shot job"
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 604800 # a week; Argo then re-creates it and the guard makes it a no-op
+  template:
+    metadata:
+      labels:
+        steakllm.io/role: mirror
+    spec:
+      serviceAccountName: mirror
+      automountServiceAccountToken: false
+      restartPolicy: OnFailure
+      nodeSelector:
+        steakllm.io/pool: cpu
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: download
+          image: public.ecr.aws/docker/library/python:3.12-slim
+          env:
+            - { name: MODEL, value: Qwen/Qwen2.5-7B-Instruct }
+            - { name: BUCKET, value: steakllm-models-066591056087 }
+            - { name: PREFIX, value: qwen2.5-7b-instruct/ }
+            - { name: HF_HUB_ENABLE_HF_TRANSFER, value: "0" }
+            - { name: HOME, value: /work }
+            - { name: PIP_NO_CACHE_DIR, value: "1" }
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              pip install --quiet --target /work/py "huggingface_hub>=0.30" boto3
+              export PYTHONPATH=/work/py
+              python - <<'PY'
+              import os, sys, boto3
+              from huggingface_hub import snapshot_download
+              s3 = boto3.client("s3")
+              try:
+                  s3.head_object(Bucket=os.environ["BUCKET"], Key=os.environ["PREFIX"] + "config.json")
+                  print("guard: weights already in the bucket; nothing to do"); open("/work/skip", "w").close(); sys.exit(0)
+              except s3.exceptions.ClientError:
+                  pass
+              path = snapshot_download(os.environ["MODEL"], local_dir="/work/model",
+                                       allow_patterns=["*.safetensors", "*.json", "*.txt", "merges.txt", "vocab.json"])
+              total = sum(os.path.getsize(os.path.join(d, f)) for d, _, fs in os.walk(path) for f in fs)
+              print(f"downloaded {total/1e9:.1f} GB to {path}")
+              PY
+          volumeMounts:
+            - { name: work, mountPath: /work }
+            - { name: tmp, mountPath: /tmp }
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+            limits: { cpu: "2", memory: 2Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true # pip writes under /work (PIP target, HOME) and /tmp
+            capabilities: { drop: [ALL] }
+      containers:
+        - name: upload
+          image: peakcom/s5cmd:v2.3.0
+          command:
+            - sh
+            - -c
+            - |
+              if [ -e /work/skip ]; then echo "guard: skipped"; exit 0; fi
+              s5cmd sync /work/model/ s3://steakllm-models-066591056087/qwen2.5-7b-instruct/
+              s5cmd ls s3://steakllm-models-066591056087/qwen2.5-7b-instruct/
+          volumeMounts:
+            - { name: work, mountPath: /work }
+          resources:
+            requests: { cpu: 250m, memory: 256Mi }
+            limits: { cpu: "2", memory: 1Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: work
+          emptyDir:
+            sizeLimit: 24Gi # on the node's 40 GB root disk, for the duration of the Job
