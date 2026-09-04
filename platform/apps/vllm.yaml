@@ -22,6 +22,8 @@ spec:
     automated:
       prune: true
       selfHeal: true
+    syncOptions:
+      - RespectIgnoreDifferences=true # without it a sync still writes replicas: 0 from the chart; ignoreDifferences alone only hides the drift (Incident 38)
   ignoreDifferences:
     - group: apps
       kind: Deployment
