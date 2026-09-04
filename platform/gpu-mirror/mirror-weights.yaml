@@ -8,6 +8,7 @@ metadata:
   name: mirror-weights
   namespace: steakllm
   annotations:
+    argocd.argoproj.io/sync-options: Replace=true # a Job's pod template is immutable: Argo must delete and re-create on change
     ignore-check.kube-linter.io/no-liveness-probe: "one-shot job"
     ignore-check.kube-linter.io/no-readiness-probe: "one-shot job"
 spec:
@@ -49,13 +50,15 @@ spec:
               export PYTHONPATH=/work/py
               python - <<'PY'
               import os, sys, boto3
+              from botocore.exceptions import ClientError  # not s3.exceptions.ClientError: that attribute does not exist (Incident 35)
               from huggingface_hub import snapshot_download
               s3 = boto3.client("s3")
               try:
                   s3.head_object(Bucket=os.environ["BUCKET"], Key=os.environ["PREFIX"] + "config.json")
                   print("guard: weights already in the bucket; nothing to do"); open("/work/skip", "w").close(); sys.exit(0)
-              except s3.exceptions.ClientError:
-                  pass
+              except ClientError as e:
+                  if e.response["Error"]["Code"] not in ("404", "NoSuchKey", "NotFound"):
+                      raise
               path = snapshot_download(os.environ["MODEL"], local_dir="/work/model",
                                        allow_patterns=["*.safetensors", "*.json", "*.txt", "merges.txt", "vocab.json"])
               total = sum(os.path.getsize(os.path.join(d, f)) for d, _, fs in os.walk(path) for f in fs)
