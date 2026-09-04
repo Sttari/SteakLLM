@@ -123,6 +123,7 @@ data "aws_iam_policy_document" "karpenter" {
       "ec2:DescribeImages", "ec2:DescribeInstances", "ec2:DescribeInstanceTypeOfferings", "ec2:DescribeInstanceTypes",
       "ec2:DescribeLaunchTemplates", "ec2:DescribeSecurityGroups", "ec2:DescribeSpotPriceHistory", "ec2:DescribeSubnets",
       "ec2:DescribeAvailabilityZones", "ec2:DescribeCapacityReservations",
+      "ec2:DescribeInstanceStatus", # 1.14's interruption controller checks instance health with it (9.4)
     ]
     resources = ["*"]
     condition {
@@ -130,6 +131,11 @@ data "aws_iam_policy_document" "karpenter" {
       variable = "aws:RequestedRegion"
       values   = [var.region]
     }
+  }
+  statement {
+    sid       = "AllowInstanceProfileListActions"
+    actions   = ["iam:ListInstanceProfiles"] # 1.14's instance-profile garbage collector; accepts no narrower resource (9.4)
+    resources = ["*"]
   }
   statement {
     sid       = "AllowSSMReadActions"
