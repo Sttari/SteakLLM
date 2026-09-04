@@ -11,7 +11,7 @@ Run over the tailnet with the key in the environment (never on the command line)
   uv run tests/load/chat_load.py --levels 1,8,32 --label vllm
 
 The gateway's quota is 60 requests per minute per key (sliding window), so each level sends
-8 × min(level, 4) requests (8, 16, 32) and the script waits --pause seconds between levels.
+8 × min(level, 4) requests (8, 32, 32) and the script waits --pause seconds between levels.
 """
 
 from __future__ import annotations
