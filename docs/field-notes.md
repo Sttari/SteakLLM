@@ -56,6 +56,19 @@ The decisions on record live in the table at the top of `PLAN.md`; each one beco
 
 Decision Sep 3 2026 (Thomas): the public door (domain, certificate, WAF, ALB) waits until everything else is ready — Step 12 (`.com` $16/yr or `.dev` $17/yr were available at the time); node t4g.xlarge spot ($0.071/h at decision time, above the $0.053 estimate); Tailscale account exists; embeddings `all-minilm`. ADR-0009.
 
+**Step 9 cost table (Sep 4 2026, us-east-1):**
+
+| Item | Price | When it bills |
+|---|---|---|
+| g6.xlarge on-demand (1× L4 22.9 GB, 4 vCPU, 16 GiB, 250 GB NVMe, x86) | $0.8048/h | only while summoned; ≈ 5 min warm-up ≈ $0.07 per summon; 15 idle min ≈ $0.20 per burst |
+| g6.xlarge spot (not used in Step 9: placement score 1/10) | $0.63–0.70/h | Step 11 experiment |
+| Models bucket, 15.2 GB of weights | ≈ $0.35/month | always |
+| ECR `steakllm/vllm` image (≈ 10 GB compressed?) | ≈ $1/month | always |
+| Karpenter's SQS queue, EventBridge rules, the nightly Lambda | cents | always |
+| GPU data transfer: weights over the S3 endpoint, image from ECR | $0 through the NAT | per summon |
+
+Quotas: Running On-Demand G and VT instances 8 vCPUs, All G and VT Spot Instance Requests 8 vCPUs (granted earlier; a g6.xlarge is 4). Decisions (Thomas, Sep 4): model Qwen2.5-7B-Instruct; on-demand first; mirror both weights and image; ADR-0011.
+
 ## 3. Incident log
 
 **Incident 1 — `brew install … tflint`: "No available formula with the name tflint"** (Aug 28 2026, Step 1.2)

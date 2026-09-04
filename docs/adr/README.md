@@ -26,3 +26,4 @@ Date: YYYY-MM-DD
 | [0008](0008-one-spot-node-and-how-argo-arrives.md) | One spot t4g.large in a managed node group; cluster API reachable from one `/32` until the tailnet; Argo CD bootstrapped once by hand, then self-managed |
 | [0009](0009-node-size-domain-embeddings.md) | One t4g.xlarge spot node for the whole platform; a Route 53 domain (zone read, not created); `all-minilm` on Ollama in the cluster as locally; Ollama image kept |
 | [0010](0010-admin-door-and-interior-walls.md) | The admin door is the tailnet; default-deny NetworkPolicies in every application room, enforced by the VPC CNI; Pod Security profiles per room |
+| [0011](0011-gpu-model-and-pool.md) | The GPU pool: Qwen2.5-7B-Instruct on one g6.xlarge on-demand, Karpenter + KEDA, weights and image mirrored into the account, two backstops |
