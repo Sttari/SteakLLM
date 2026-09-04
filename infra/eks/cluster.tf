@@ -108,3 +108,11 @@ resource "aws_eks_access_policy_association" "admin" {
     type = "cluster"
   }
 }
+
+# Karpenter (Step 9) finds the security group its nodes must join by this tag; the subnets carry it
+# from infra/network. Only the module that owns the cluster can tag the group EKS created for it.
+resource "aws_ec2_tag" "cluster_sg_discovery" {
+  resource_id = aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
+  key         = "karpenter.sh/discovery"
+  value       = var.project
+}

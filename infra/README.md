@@ -8,7 +8,8 @@ Every module has its own state key in the shared bucket and is applied by the pi
 | `ecr` | `ecr/terraform.tfstate` | `apply.yml` | bootstrap | five image repositories, immutable tags, lifecycle rules | ≈ $0.15 |
 | `network` | `network/terraform.tfstate` | `apply.yml` | bootstrap | VPC, subnets, IGW, NAT instance + EIP, S3 and DynamoDB endpoints (ADR-0007) | ≈ $7 |
 | `eks` | `eks/terraform.tfstate` | `apply.yml` | network (remote state) | the cluster, one spot t4g.xlarge node, six add-ons, access entries (ADR-0008/0009) | ≈ $4.60/day while up |
-| `platform` | `platform/terraform.tfstate` | `apply.yml`, after eks | eks (by name, not state) | Secrets Manager slots, Pod Identity roles and associations per tenant | ≈ $1.20 |
+| `platform` | `platform/terraform.tfstate` | `apply.yml`, after eks | eks (by name, not state) | Secrets Manager slots, Pod Identity roles and associations per tenant | ≈ $1.60 |
+| `gpu` | `gpu/terraform.tfstate` | `apply.yml`, after platform | eks (by name) | models bucket, the vLLM image repository, Karpenter's role + interruption queue, mirror/vLLM roles, the nightly reaper (ADR-0011) | ≈ $1.35; the GPU bills only while summoned |
 
 **Gates.** Each matrix job references the `production` environment, so every module is approved separately, in order — one click per module, with that module's plan in the run summary above the click. This is deliberate (recorded in ADR-0003's amendment): a reviewer approves a plan, not a run.
 

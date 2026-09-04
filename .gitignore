@@ -75,3 +75,5 @@ models/
 
 # ---------- Assistant tooling (per-machine settings only; CLAUDE.md itself is committed) ----------
 .claude/settings.local.json
+# Terraform-built Lambda archives
+infra/**/.build/
