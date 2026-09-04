@@ -1,0 +1,30 @@
+{{- if .Values.autoscaling.enabled }}
+# Demand → replicas (9.6). KEDA polls Prometheus every pollingInterval seconds; any message on the chats
+# or documents topic in the last five minutes (rate > activationThreshold 0) sets replicas to 1, which
+# summons the GPU (9.5). cooldownPeriod seconds after the last active poll it sets replicas back to 0;
+# Karpenter removes the empty node consolidateAfter later. KEDA owns /spec/replicas from here: the
+# Application ignores that field and the sync respects the ignore.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: vllm
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vllm.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: vllm
+  minReplicaCount: 0
+  maxReplicaCount: 1
+  pollingInterval: {{ .Values.autoscaling.pollingInterval }}
+  cooldownPeriod: {{ .Values.autoscaling.cooldownPeriod }}
+  triggers:
+  {{- range .Values.autoscaling.topics }}
+    - type: prometheus
+      metadata:
+        serverAddress: {{ $.Values.autoscaling.prometheus }}
+        query: sum(rate(kafka_server_brokertopicmetrics_messagesin_total{topic="{{ . }}"}[5m]))
+        threshold: "1"
+        activationThreshold: "0"
+  {{- end }}
+{{- end }}

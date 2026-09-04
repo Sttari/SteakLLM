@@ -68,3 +68,12 @@ securityContext:
   readOnlyRootFilesystem: true
   capabilities:
     drop: [ALL]
+
+# 9.6: KEDA turns "a chat or a document in the last five minutes" into replicas 1, and fifteen quiet
+# minutes into 0. The signal is Kafka's per-topic message counter as Prometheus scrapes it (every 30 s).
+autoscaling:
+  enabled: true
+  prometheus: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+  topics: [chats, documents]
+  pollingInterval: 15
+  cooldownPeriod: 900

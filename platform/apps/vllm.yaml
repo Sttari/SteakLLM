@@ -24,6 +24,9 @@ spec:
       selfHeal: true
     syncOptions:
       - RespectIgnoreDifferences=true # without it a sync still writes replicas: 0 from the chart; ignoreDifferences alone only hides the drift (Incident 38)
+    retry:
+      limit: 5
+      backoff: { duration: 30s, factor: 2, maxDuration: 5m } # the ScaledObject races KEDA's CRDs on a fresh cluster # without it a sync still writes replicas: 0 from the chart; ignoreDifferences alone only hides the drift (Incident 38)
   ignoreDifferences:
     - group: apps
       kind: Deployment

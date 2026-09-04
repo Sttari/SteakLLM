@@ -1,0 +1,33 @@
+# KEDA: demand → replicas, including 0 → 1 (ADR-0011). It reads Prometheus for "chats or documents in the
+# last five minutes" and scales the vLLM Deployment (the ScaledObject lives in charts/vllm); Karpenter then
+# does the machine. On the CPU node, in its own restricted room. Wave 3, beside Karpenter: the vLLM chart's
+# ScaledObject needs its CRDs.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: keda
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: default
+  sources:
+    - repoURL: https://kedacore.github.io/charts
+      chart: keda
+      targetRevision: 2.20.2
+      helm:
+        releaseName: keda
+        valueFiles:
+          - $values/platform/keda/values.yaml
+    - repoURL: https://github.com/Sttari/SteakLLM.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: keda
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true # KEDA's CRDs are large
