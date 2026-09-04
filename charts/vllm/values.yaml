@@ -1,10 +1,69 @@
-# vLLM on the GPU pool (Step 9.5 completes this chart). The model is Qwen/Qwen2.5-7B-Instruct
-# (ADR-0011): 15.2 GB fp16, Apache-2.0, ungated; it fits one L4 (22.9 GB usable) with an 8k context at
-# 90 % memory utilisation. Weights come from s3://steakllm-models-066591056087/qwen2.5-7b-instruct/
-# (mirrored once, 9.3); the image from ECR steakllm/vllm (v0.28.0, amd64, mirrored once, 9.3).
+# vLLM on the GPU pool (9.5). The model is Qwen/Qwen2.5-7B-Instruct (ADR-0011): 15.2 GB fp16, Apache-2.0,
+# ungated; it fits one L4 (22.9 GB usable) with an 8k context at 90 % memory utilisation. Weights come
+# from s3://steakllm-models-066591056087/qwen2.5-7b-instruct/ (mirrored once, 9.3); the image from ECR
+# steakllm/vllm (v0.28.0, amd64, mirrored once, 9.3).
+#
+# replicaCount is 0: nothing runs, no node exists, no money moves. Scaling to 1 is the summon: the pod is
+# unschedulable (it asks for nvidia.com/gpu), Karpenter launches the g6.xlarge (9.4), the init container
+# copies the weights from S3 to the node's NVMe, vLLM loads them, /health turns 200, the gateway's breaker
+# closes. 9.6 hands the scaling to KEDA.
+replicaCount: 0
+
+image:
+  repository: 066591056087.dkr.ecr.us-east-1.amazonaws.com/steakllm/vllm
+  tag: v0.28.0
+  pullPolicy: IfNotPresent
+
+weights:
+  image: public.ecr.aws/aws-cli/aws-cli:2.36.39 # CLI v2 speaks Pod Identity; s5cmd's SDK did not (Incident 35e)
+  bucket: steakllm-models-066591056087
+  prefix: qwen2.5-7b-instruct/
+  sizeLimit: 40Gi # an emptyDir on the instance store (EC2NodeClass instanceStorePolicy RAID0): NVMe, gone with the node
+
 model:
-  name: Qwen/Qwen2.5-7B-Instruct
-  s3Prefix: qwen2.5-7b-instruct/
+  name: Qwen/Qwen2.5-7B-Instruct # the gateway forwards the client's model name as-is, so vLLM answers to this…
+  alias: qwen2.5-7b-instruct     # …and to the short form
   maxModelLen: 8192
   gpuMemoryUtilization: "0.9"
   dtype: half
+
+serviceAccount:
+  name: vllm # the Pod Identity association is steakllm/vllm → role steakllm-vllm (infra/gpu): read the models bucket
+
+service:
+  port: 8000 # http://vllm.steakllm.svc:8000 — the address the gateway has pointed at since 8.8
+
+# g6.xlarge: 4 vCPU, 16 GiB, one L4. The GPU is the whole point; the CPU and memory leave room for the
+# kubelet, the device plugin and the CNI. Host memory: the safetensors are memory-mapped into page cache
+# (reclaimable) while they stream to the GPU; the process itself needs a few GiB.
+resources:
+  requests: { cpu: "2", memory: 6Gi, nvidia.com/gpu: 1 }
+  limits: { cpu: "3", memory: 13Gi, nvidia.com/gpu: 1 }
+weightsResources:
+  requests: { cpu: "1", memory: 1Gi }
+  limits: { cpu: "2", memory: 2Gi }
+
+nodeSelector:
+  steakllm.io/pool: gpu
+tolerations:
+  - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+
+# Start-up is minutes, not seconds: weights from NVMe into the GPU, then CUDA graphs and torch.compile.
+# The startup probe gives it ten minutes before the kubelet may call it dead; readiness gates the Service.
+probes:
+  startupFailureThreshold: 60 # × 10 s
+
+# restricted Pod Security (the steakllm room): the image runs as root by default, so the pod runs it as
+# uid 1000 with HOME and every cache under /tmp; read-only root, no capabilities.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]

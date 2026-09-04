@@ -59,6 +59,8 @@ spec:
       ports: [{ protocol: TCP, port: 11434 }]
     - to: [{ podSelector: { matchLabels: { app.kubernetes.io/name: gateway } } }]
       ports: [{ protocol: TCP, port: 8000 }]
+    - to: [{ podSelector: { matchLabels: { app.kubernetes.io/name: vllm } } }]
+      ports: [{ protocol: TCP, port: 8000 }]
 ---
 # → Kafka: the broker accepts the steakllm namespace, its own namespace (operator, entity operator, the
 # broker itself for KRaft), and Prometheus on the metrics port.
@@ -150,6 +152,36 @@ kind: NetworkPolicy
 metadata: { name: mirror-egress, namespace: steakllm }
 spec:
   podSelector: { matchLabels: { steakllm.io/role: mirror } }
+  policyTypes: [Egress]
+  egress:
+    - to: [{ ipBlock: { cidr: 169.254.170.23/32 } }]
+      ports: [{ protocol: TCP, port: 80 }]
+    - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.42.0.0/16, 169.254.169.254/32] } }]
+      ports: [{ protocol: TCP, port: 443 }]
+---
+# → vLLM (Step 9): the gateway, the workers (the summarizer, Step 10) and Prometheus, on 8000. Nothing else,
+# nowhere else: the Service is ClusterIP and the room is walled.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: vllm-ingress, namespace: steakllm }
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: vllm } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: gateway } }
+        - podSelector: { matchLabels: { steakllm.io/role: worker } }
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: monitoring } }
+      ports: [{ protocol: TCP, port: 8000 }]
+---
+# vLLM → out: the Pod Identity agent and S3 for the weights (the gateway endpoint keeps it in the VPC's
+# routing, but S3 answers from public addresses, so the rule is "outside the VPC, 443", the mirror's shape).
+# No Hugging Face: HF_HUB_OFFLINE=1 and nothing else is reachable anyway.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: vllm-egress, namespace: steakllm }
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: vllm } }
   policyTypes: [Egress]
   egress:
     - to: [{ ipBlock: { cidr: 169.254.170.23/32 } }]
