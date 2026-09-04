@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 15
     strategy:
       matrix:
-        module: [bootstrap, ecr, network, eks, platform]   # grows as infra/ gains modules (data, pipeline…)
+        module: [bootstrap, ecr, network, eks, platform, gpu]   # grows as infra/ gains modules (data, pipeline…)
     env:
       # bootstrap's four required variables. Three derive from GitHub's own context —
       # the same owner/repo IDs from the OIDC incident; the email is PII and lives as a masked secret.
