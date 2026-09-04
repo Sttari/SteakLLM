@@ -228,6 +228,12 @@ Decision Sep 3 2026 (Thomas): the public door (domain, certificate, WAF, ALB) wa
 *Fix:* `kafka-egress` admits `172.20.0.0/16` on 443 (PR #39); `networkPolicyPeers` on the plain listener (PR #38); a `rollout restart` to pull the operator out of its backoff. Then the proof passed: `default` → Kafka BLOCKED, gateway and entity operator fine.
 *Lesson:* a default-deny room needs its egress written from the pod's point of view (ClusterIPs, not endpoints), and any operator that writes NetworkPolicies of its own must be told whom to admit — otherwise your policy is just a second, ignored opinion. And prove the blocked path with the very target you care about.
 
+**Incident 31 — the Tailscale operator crashed asking for a tag the OAuth client does not own; then its proxies were refused by Pod Security** (Sep 4 2026, Step 8.9)
+*Symptom:* the operator pod in `CrashLoopBackOff` with `creating operator authkey: requested tags [tag:k8s-operator] are invalid or not permitted (400)`; after that was fixed, five proxy StatefulSets at 0/1 with `violates PodSecurity "baseline:latest"` events, and no proxy device on the tailnet.
+*Cause:* (1) the chart's default `operatorConfig.defaultTags` is `tag:k8s-operator`; Thomas's OAuth client and `tagOwners` only define `tag:k8s`, so the coordination server refused the key. (2) A Tailscale proxy adds `NET_ADMIN` for WireGuard; `baseline` admits no such capability. Same shape as Incident 28, a different capability.
+*Fix:* `defaultTags: tag:k8s` for the operator (PR #44); the `tailscale` room enforces `privileged` with `baseline` warn/audit (PR #45); a `rollout restart` of the five StatefulSets out of their backoff. Within a minute all four services and the router were online on the tailnet.
+*Lesson:* read what a chart asks the outside world for (tags, scopes) before creating the credential that must grant it; and any component that touches the node's network stack lives in a `privileged` room — write the room's profile from the component's needs, not from hope.
+
 **Open item — ECR scan-on-push did not scan the multi-arch images** (Sep 2 2026, Step 6.12)
 The five repositories have `scan_on_push = true` and the registry is in `BASIC` scanning mode, yet after the first release every image — the `sha-3432f6a` index and its two platform children — shows scan status `None`. Basic scanning does not scan an image index, and the children pushed as part of one did not trigger a scan either. Trivy in `release.yml` is the gate that actually ran (0 fixable CRITICALs per image), so nothing shipped unscanned. Candidates: a post-push step in `release.yml` that calls `ecr:StartImageScan` on each child digest and waits for the verdict (the release role would need that one action; bootstrap apply), or enhanced scanning (Inspector, paid) at Step 11. Decide before Step 8 pulls these images onto the node.
 
@@ -285,6 +291,7 @@ First pipeline apply: **2026-09-01T20:18:17Z** — `infra/ecr`, 10 resources, by
 - One spot instance type is a bet on one market; give a node group a menu (Incident 27).
 - NetworkPolicies on EKS are accepted and ignored until the VPC CNI's enforcement is switched on; prove a blocked path, never assume one.
 - Read the operator's own example before trimming its configuration (Incident 29b); an API version in a manifest is a promise the operator may have stopped keeping (Incident 29).
+- Rotate a bootstrap password by writing its *hash* from the vault, not by hand: External Secrets can `bcrypt` a value and merge it into a secret another chart owns.
 - A cluster you have not rebuilt from git is a pet; the number (40 min) belongs in the README, and it will drift — measure it again after Step 8.
 - zsh does not word-split a variable holding a command (`$C build …` fails "no such file"); use a shell function. Likewise `${PIPESTATUS[0]}` is bash; zsh spells it `$pipestatus[1]` — write the command's output to a file and read `$?` instead.
 
