@@ -334,6 +334,12 @@ The first summon launched the node in 38 s and had the weights on the NVMe by fi
 *Fix:* a menu of one-GPU, 24 GB types, cheapest first — g6.xlarge, g6.2xlarge (same L4), g5.xlarge (A10G) — with `limits.cpu 8` so the 2xlarge fits and `nvidia.com/gpu 1` still capping the pool at one machine (PR #79). Spot stays off (9.1); it would be the next widening.
 *Lesson:* capacity is a property of the minute, not of the region. Every NodePool needs a menu and every summon time needs the phrase "when capacity is available".
 
+**Incident 42 — the first demand chat was invisible: it landed in a scrape gap after Kafka restarted, and `rate()` saw a flat line** (Sep 4 2026, Step 9.6)
+*Symptom:* the drill's chat was answered by Bedrock at 20:21 and the ScaledObject stayed `ACTIVE False`; Prometheus's `rate(...[5m])` on the `chats` counter read 0.
+*Cause:* the CPU node had been replaced at 19:53 (the day's second spot reclaim; managed node groups replace on the rebalance recommendation), so Kafka restarted with a fresh JMX counter; Prometheus's first sample of the new broker already read 1 — the chat had happened before the first scrape. A counter with no lower sample has no rate. KEDA also logged `connection refused` to Prometheus for two minutes while Prometheus itself moved.
+*Fix:* none needed for the design; a second chat gave the counter a before and an after and the chain fired in 36 s. For the drill: stamps to stderr (a `$(…)` capture had swallowed them) and a connect timeout on the chat.
+*Lesson:* `rate()` needs two samples that differ; an event in the same scrape interval as a counter's first sample does not exist to Prometheus. If the signal must never miss, use `increase()` over a window longer than one scrape gap, or count on the producer side (the gateway's own counter, exported) — an open item for 9.8.
+
 **Open item — ECR scan-on-push did not scan the multi-arch images** (Sep 2 2026, Step 6.12)
 The five repositories have `scan_on_push = true` and the registry is in `BASIC` scanning mode, yet after the first release every image — the `sha-3432f6a` index and its two platform children — shows scan status `None`. Basic scanning does not scan an image index, and the children pushed as part of one did not trigger a scan either. Trivy in `release.yml` is the gate that actually ran (0 fixable CRITICALs per image), so nothing shipped unscanned. Candidates: a post-push step in `release.yml` that calls `ecr:StartImageScan` on each child digest and waits for the verdict (the release role would need that one action; bootstrap apply), or enhanced scanning (Inspector, paid) at Step 11. Decide before Step 8 pulls these images onto the node.
 
@@ -401,6 +407,27 @@ First pipeline apply: **2026-09-01T20:18:17Z** — `infra/ecr`, 10 resources, by
 
 Run 1's clock survived a spot reclaim of the CPU node (Karpenter itself restarted at 17:51): the "last pod" time lives on the NodeClaim.
 
+**Step 9.6 — the demand drill** (Sep 4 2026, one chat, no clicks)
+
+| Stage (from the first chat, answered by Bedrock) | Time |
+|---|---|
+| chat answered by Bedrock 3 s |
+| ScaledObject ACTIVE and replicas 1 at 36 s |
+| NodeClaim 37 s |
+| node Ready 81 s |
+| weights and image on the node 6 min 12 s |
+| pod Ready 8 min 52 s |
+| chat answered by vLLM 8 min 53 s |
+
+| Idle path (from the last chat) | Time |
+|---|---|
+| ACTIVE False 4 min 24 s |
+| replicas 0 at 19 min 21 s (cooldown 900 s after ACTIVE False) |
+| node gone 39 min 09 s |
+| instance gone 39 min 10 s |
+
+Prometheus scrapes Kafka every 30 s and KEDA polls every 15 s, so the signal costs under a minute; the rest is 9.5's summon. The idle chain is three patiences in series (rate window 5 m, KEDA cooldown 15 m, Karpenter consolidateAfter 15 m) plus the drain.
+
 ## 5. Lessons (running list)
 
 - Homebrew core is open-source-only; vendor taps exist for a reason.
@@ -437,6 +464,9 @@ Run 1's clock survived a spot reclaim of the CPU node (Karpenter itself restarte
 - **A fallback that works hides the bug.** Prove a new backend from its own log, not from a 200 (Incident 40).
 - **The summon is dominated by bytes, not by the machine.** The node is Ready in 38 s; five of the seven minutes are 24 GB of image and weights arriving. A node-local image cache or a snapshot would halve it (open item for Step 11).
 - **A NodePool with one type is a single point of capacity failure** (Incident 41, after Incident 27). Menus, and the honest phrase "when capacity is available" next to every summon time.
+
+- **Idle timers add up in series.** "Fifteen idle minutes" was true of each controller and false of the system: window + cooldown + consolidateAfter ≈ 35 min before the instance goes. Decide which one owns the number (9.7/9.8 revisit: cooldown 300 or consolidateAfter 5 m).
+- **The demand signal is the event log, not the router.** KEDA reads Kafka's `chats` counter through Prometheus; the gateway's in-memory demand counter never left the process. Facts in the log are what other components can act on (ADR-0006's principle, proven).
 
 ## 6. Small stumbles (tooling and habits — not incidents, still time)
 
@@ -479,3 +509,5 @@ Everything that went sideways for a minute or more, whether or not it earned an 
 - **A python f-string with an escaped quote inside the braces** is a SyntaxError; build the string outside. (Sep 4)
 - **A spot reclaim mid-drill** took the CPU node (m7g.xlarge → m6g.xlarge at 17:50) and with it the Tailscale router and Karpenter for a minute; kubectl over the tailnet was back three minutes later, the SSM tunnel covered the gap. (Sep 4)
 - **The drill script watched a pod by name** and lost it when the Deployment rolled; watch the Deployment's ready count instead. (Sep 4)
+- **Second spot reclaim of the day (19:53)** replaced the CPU node m6g → m7g mid-drill; Kafka, Prometheus, the gateway, KEDA and the router all moved within four minutes, the drill's chat hung through it (no connect timeout), and the counter reset made the chat invisible (Incident 42). Two reclaims in one afternoon is the price of the spot CPU node; 9.8 measures it. (Sep 4)
+- **`stamp` inside `$(…)`** — a function that prints progress and returns a value through stdout loses the progress lines to the capture; print progress to stderr. (Sep 4)
