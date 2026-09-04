@@ -19,6 +19,7 @@ spec:
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
       automountServiceAccountToken: false
+      enableServiceLinks: false # the Service is named vllm, so Kubernetes would inject VLLM_PORT=tcp://<ip>:8000 — which vLLM reads as its own setting and rejects (Incident 39)
       terminationGracePeriodSeconds: 30
       nodeSelector:
         {{- toYaml .Values.nodeSelector | nindent 8 }}
