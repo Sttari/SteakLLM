@@ -8,7 +8,7 @@ metadata:
   name: mirror-image
   namespace: steakllm
   annotations:
-    argocd.argoproj.io/sync-options: Replace=true # a Job's pod template is immutable: Argo must delete and re-create on change
+    argocd.argoproj.io/sync-options: Replace=true,Force=true # a Job is immutable and carries a generated selector: only delete-then-create works (Incident 35b)
     ignore-check.kube-linter.io/no-liveness-probe: "one-shot job"
     ignore-check.kube-linter.io/no-readiness-probe: "one-shot job"
 spec:
