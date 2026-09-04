@@ -61,11 +61,13 @@ spec:
               PY
           volumeMounts:
             - { name: work, mountPath: /work }
+            - { name: tmp, mountPath: /tmp }
           resources:
             requests: { cpu: 100m, memory: 128Mi }
             limits: { cpu: 500m, memory: 512Mi }
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true # pip writes under /work (PIP target, HOME) and /tmp
             capabilities: { drop: [ALL] }
       containers:
         - name: copy
@@ -89,6 +91,8 @@ spec:
             readOnlyRootFilesystem: true
             capabilities: { drop: [ALL] }
       volumes:
+        - name: tmp
+          emptyDir: {}
         - name: work
           emptyDir:
             sizeLimit: 2Gi # crane streams layers; only the login and pip files land here
