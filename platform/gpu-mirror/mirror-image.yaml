@@ -1,0 +1,94 @@
+# vllm/vllm-openai:v0.28.0 (Docker Hub, amd64, ≈ 10 GB) → 066591056087.dkr.ecr.us-east-1.amazonaws.com/steakllm/vllm:v0.28.0, once.
+# Stage 1 (init): if ECR already has the tag, exit; otherwise fetch an ECR login token with the mirror
+# role and write a Docker config for crane. Stage 2 (main): crane copies the image registry to registry —
+# no daemon, no unpacking, through the NAT once.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mirror-image
+  namespace: steakllm
+  annotations:
+    ignore-check.kube-linter.io/no-liveness-probe: "one-shot job"
+    ignore-check.kube-linter.io/no-readiness-probe: "one-shot job"
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 604800
+  template:
+    metadata:
+      labels:
+        steakllm.io/role: mirror
+    spec:
+      serviceAccountName: mirror
+      automountServiceAccountToken: false
+      restartPolicy: OnFailure
+      nodeSelector:
+        steakllm.io/pool: cpu
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: login
+          image: public.ecr.aws/docker/library/python:3.12-slim
+          env:
+            - { name: REPO, value: 066591056087.dkr.ecr.us-east-1.amazonaws.com/steakllm/vllm }
+            - { name: TAG, value: v0.28.0 }
+            - { name: HOME, value: /work }
+            - { name: PIP_NO_CACHE_DIR, value: "1" }
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              pip install --quiet --target /work/py boto3
+              export PYTHONPATH=/work/py
+              python - <<'PY'
+              import base64, json, os, sys, boto3
+              ecr = boto3.client("ecr", region_name="us-east-1")
+              try:
+                  ecr.describe_images(repositoryName="steakllm/vllm", imageIds=[{"imageTag": os.environ["TAG"]}])
+                  print("guard: image already in ECR; nothing to do"); open("/work/skip", "w").close(); sys.exit(0)
+              except ecr.exceptions.ImageNotFoundException:
+                  pass
+              auth = ecr.get_authorization_token()["authorizationData"][0]
+              registry = auth["proxyEndpoint"].replace("https://", "")
+              os.makedirs("/work/docker", exist_ok=True)
+              json.dump({"auths": {registry: {"auth": auth["authorizationToken"]}}}, open("/work/docker/config.json", "w"))
+              print("ecr login written for", registry)
+              PY
+          volumeMounts:
+            - { name: work, mountPath: /work }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+      containers:
+        - name: copy
+          image: gcr.io/go-containerregistry/crane:v0.22.1
+          env:
+            - { name: DOCKER_CONFIG, value: /work/docker }
+          command:
+            - sh
+            - -c
+            - |
+              if [ -e /work/skip ]; then echo "guard: skipped"; exit 0; fi
+              crane copy --platform linux/amd64 docker.io/vllm/vllm-openai:v0.28.0 066591056087.dkr.ecr.us-east-1.amazonaws.com/steakllm/vllm:v0.28.0
+              crane digest 066591056087.dkr.ecr.us-east-1.amazonaws.com/steakllm/vllm:v0.28.0
+          volumeMounts:
+            - { name: work, mountPath: /work }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "2", memory: 2Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+      volumes:
+        - name: work
+          emptyDir:
+            sizeLimit: 2Gi # crane streams layers; only the login and pip files land here

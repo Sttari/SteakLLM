@@ -1,0 +1,28 @@
+# Two one-time Jobs that bring the GPU pool's bytes into our account (ADR-0011): the model weights into
+# the models bucket, the vLLM image into ECR. Both run on the CPU node (in-cloud bandwidth), wear the
+# steakllm/mirror Pod Identity role, and are guarded: if the destination already holds the bytes they
+# exit at once, so Argo re-running them is free. Wave 4, beside the gateway.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gpu-mirror
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Sttari/SteakLLM.git
+    targetRevision: main
+    path: platform/gpu-mirror
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: steakllm
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+  ignoreDifferences:
+    - group: batch
+      kind: Job
+      jsonPointers: [/spec/suspend, /status] # a finished Job is not drift
