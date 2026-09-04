@@ -1,0 +1,13 @@
+# The subnet router: advertises the VPC's range on the tailnet, so the laptop reaches the cluster's
+# private API endpoint (and any ClusterIP it needs) over WireGuard. The route must be approved in
+# Tailscale's admin console once, or auto-approved for tag:k8s in the ACL (8.9).
+apiVersion: tailscale.com/v1alpha1
+kind: Connector
+metadata:
+  name: steakllm-vpc
+spec:
+  hostname: steakllm-vpc-router
+  proxyClass: cpu
+  tags: [tag:k8s]
+  subnetRouter:
+    advertiseRoutes: [10.42.0.0/16]

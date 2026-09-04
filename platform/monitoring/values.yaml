@@ -44,7 +44,10 @@ grafana:
     userKey: admin-user
     passwordKey: admin-password
   service:
-    type: ClusterIP # reached by port-forward now and the tailnet (8.9); never an Ingress here
+    type: ClusterIP # never an Ingress here; the tailnet proxy below is the only way in
+    annotations:
+      tailscale.com/expose: "true"
+      tailscale.com/hostname: grafana
   resources:
     requests: { cpu: 50m, memory: 128Mi }
     limits: { cpu: 300m, memory: 256Mi }

@@ -1,0 +1,15 @@
+# Every Tailscale proxy pod (one per exposed Service, plus the Connector) runs on the CPU node with
+# small limits. Referenced by proxyConfig.defaultProxyClass in the operator's values.
+apiVersion: tailscale.com/v1alpha1
+kind: ProxyClass
+metadata:
+  name: cpu
+spec:
+  statefulSet:
+    pod:
+      nodeSelector:
+        steakllm.io/pool: cpu
+      tailscaleContainer:
+        resources:
+          requests: { cpu: 25m, memory: 48Mi }
+          limits: { cpu: 200m, memory: 128Mi }

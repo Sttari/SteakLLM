@@ -42,6 +42,9 @@ secret:
 
 service:
   port: 8000
+  annotations:
+    tailscale.com/expose: "true" # the admin door (8.9); the public door is Step 12's
+    tailscale.com/hostname: gateway
 
 resources:
   requests: { cpu: 100m, memory: 256Mi }

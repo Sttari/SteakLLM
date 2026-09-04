@@ -47,6 +47,10 @@ repoServer:
     requests: { cpu: 100m, memory: 256Mi }
     limits: { cpu: 500m, memory: 512Mi }
 server:
+  service:
+    annotations:
+      tailscale.com/expose: "true"
+      tailscale.com/hostname: argocd
   resources:
     requests: { cpu: 100m, memory: 128Mi }
     limits: { cpu: 500m, memory: 512Mi }
