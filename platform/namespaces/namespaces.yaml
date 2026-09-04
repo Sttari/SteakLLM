@@ -83,3 +83,11 @@ metadata:
     pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/warn: baseline
     pod-security.kubernetes.io/audit: baseline
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: karpenter
+  labels:
+    steakllm.io/tier: platform
+    pod-security.kubernetes.io/enforce: restricted
