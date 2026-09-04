@@ -62,7 +62,7 @@ The complete table with the alternative rejected for each choice is in [`PLAN.md
 - [X]  **6.** The five services with tests — gateway, embedder, summarizer, notifier, ingest
 - [X]  **7.** Network and cluster — VPC, EKS, the always-on CPU node, Argo CD
 - [X]  **8.** Platform services by GitOps — monitoring, Kafka, Qdrant, secrets, the admin door (the public door waits for Step 12)
-- [ ]  **9.** GPU pool — Karpenter, KEDA, vLLM summoned on demand
+- [X]  **9.** GPU pool — Karpenter, KEDA, vLLM summoned on demand
 - [ ]  **10.** Cloud event pipeline and chaos drills — S3, EventBridge, Lambda, DynamoDB, SNS
 - [ ]  **11.** Bedrock fallback, tracing, alerts, SLOs, cost dashboard
 - [ ]  **12.** Portfolio polish — demo mode, ADRs, walkthrough, public repo
