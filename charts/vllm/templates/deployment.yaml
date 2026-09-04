@@ -59,6 +59,9 @@ spec:
             - --served-model-name
             - {{ .Values.model.name }}
             - {{ .Values.model.alias }}
+            {{- range .Values.model.gatewayNames }}
+            - {{ . }}
+            {{- end }}
             - --max-model-len
             - {{ .Values.model.maxModelLen | quote }}
             - --gpu-memory-utilization

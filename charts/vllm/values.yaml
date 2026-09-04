@@ -23,6 +23,7 @@ weights:
 model:
   name: Qwen/Qwen2.5-7B-Instruct # the gateway forwards the client's model name as-is, so vLLM answers to this…
   alias: qwen2.5-7b-instruct     # …and to the short form
+  gatewayNames: [llm, docs]      # …and to the gateway's mode names, which it forwards as the model (open item: map them in the gateway, Step 10)
   maxModelLen: 8192
   gpuMemoryUtilization: "0.9"
   dtype: half
