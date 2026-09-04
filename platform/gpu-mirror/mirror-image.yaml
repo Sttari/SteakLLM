@@ -8,6 +8,7 @@ metadata:
   name: mirror-image
   namespace: steakllm
   annotations:
+    argocd.argoproj.io/sync-options: Replace=true # a Job's pod template is immutable: Argo must delete and re-create on change
     ignore-check.kube-linter.io/no-liveness-probe: "one-shot job"
     ignore-check.kube-linter.io/no-readiness-probe: "one-shot job"
 spec:
@@ -71,7 +72,7 @@ spec:
             capabilities: { drop: [ALL] }
       containers:
         - name: copy
-          image: gcr.io/go-containerregistry/crane:v0.22.1
+          image: gcr.io/go-containerregistry/crane:v0.22.0
           env:
             - { name: DOCKER_CONFIG, value: /work/docker }
           command:
