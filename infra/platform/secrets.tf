@@ -8,6 +8,7 @@ locals {
     gateway   = "The gateway's API keys: {\"api_key\": …, \"demo_key\": …}"
     tailscale = "The Tailscale operator's OAuth client: {\"client_id\": …, \"client_secret\": …}"
     grafana   = "Grafana's admin login: {\"admin-user\": \"admin\", \"admin-password\": …}"
+    argocd    = "Argo CD's admin password (plain; External Secrets writes the bcrypt hash into argocd-secret): {\"password\": …}"
   }
 }
 
