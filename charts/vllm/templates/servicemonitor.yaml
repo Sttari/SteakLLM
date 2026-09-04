@@ -1,0 +1,20 @@
+{{- if .Values.metrics.serviceMonitor }}
+# vLLM's own /metrics (tokens generated, KV-cache use, queue depth) into kube-prometheus-stack, which
+# selects every ServiceMonitor in the cluster (platform/monitoring). Prometheus reaches the pod through
+# the vllm-ingress NetworkPolicy (the monitoring room on 8000).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: vllm
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vllm.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "vllm.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+{{- end }}
