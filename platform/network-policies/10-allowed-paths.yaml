@@ -10,6 +10,8 @@ spec:
   podSelector: { matchLabels: { app.kubernetes.io/name: gateway } }
   policyTypes: [Egress]
   egress:
+    - to: [{ ipBlock: { cidr: 169.254.170.23/32 } }] # the Pod Identity agent: where a pod fetches its AWS credentials (Incident 32)
+      ports: [{ protocol: TCP, port: 80 }]
     - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.42.0.0/16, 169.254.169.254/32] } }] # AWS APIs via the NAT; never the node's metadata
       ports: [{ protocol: TCP, port: 443 }]
     - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kafka } }, podSelector: { matchLabels: { strimzi.io/kind: Kafka } } }]
@@ -45,6 +47,8 @@ spec:
   podSelector: { matchLabels: { steakllm.io/role: worker } }
   policyTypes: [Egress]
   egress:
+    - to: [{ ipBlock: { cidr: 169.254.170.23/32 } }] # the Pod Identity agent: where a pod fetches its AWS credentials (Incident 32)
+      ports: [{ protocol: TCP, port: 80 }]
     - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [10.42.0.0/16, 169.254.169.254/32] } }]
       ports: [{ protocol: TCP, port: 443 }]
     - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kafka } }, podSelector: { matchLabels: { strimzi.io/kind: Kafka } } }]
