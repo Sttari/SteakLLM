@@ -4,7 +4,7 @@
 COMPOSE := docker compose --env-file .env --profile services -f compose/compose.yaml
 
 help: ## list targets
-	@grep -E "^[a-z]+:.*## " $(MAKEFILE_LIST) | awk -F ":.*## " '{printf "  %-8s %s\n", $$1, $$2}'
+	@grep -E "^[a-z-]+:.*## " $(MAKEFILE_LIST) | awk -F ":.*## " '{printf "  %-16s %s\n", $$1, $$2}'
 
 lint: ## run every pre-commit hook on the whole tree
 	pre-commit run --all-files
