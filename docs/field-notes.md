@@ -432,6 +432,28 @@ Prometheus scrapes Kafka every 30 s and KEDA polls every 15 s, so the signal cos
 
 one chat (Bedrock) → KEDA ACTIVE 29 s → node Ready 68 s (i-096df6775b94c7e7d); `make gpu-check` with the node present: REFUSING, exit 1; KEDA paused at 0 → replicas 0 and the pod gone at 70 s (the empty node); `aws lambda invoke` at 75 s returned `{"nodepool": "gpu", "instances": ["i-096df6775b94c7e7d"], "count": 1}` in 3.6 s; EC2 shutting-down at 80 s; Karpenter deleted the NodeClaim and the node at 341 s (22:00:36Z), the instance terminated at 342 s; vLLM pods after: 0, replicas 0, no NodeClaim; `make gpu-check` passed at 343 s.
 
+**Step 9.8 — the load table** (Sep 4 2026, over the tailnet from the laptop; prompt ≈ 30 tokens, `max_tokens` 128, temperature 0.2; the gateway's quota is 60 requests/min per key, so 8/16/32 requests per level, a minute apart)
+
+**bedrock (GPU at zero)** · 2026-09-04 22:32 UTC · max_tokens 128
+
+| concurrency | requests | ok / 429 / failed | req/s | tokens/s | p50 | p95 | x-backend |
+|---|---|---|---|---|---|---|---|
+| 1 | 8 | 8 / 0 / 0 | 1.22 | 127 | 0.78 s | 1.19 s | bedrock 8 |
+| 8 | 32 | 32 / 0 / 0 | 8.31 | 901 | 0.83 s | 1.11 s | bedrock 32 |
+| 32 | 32 | 32 / 0 / 0 | 14.15 | 1526 | 1.78 s | 2.19 s | bedrock 32 |
+
+**vllm (Qwen2.5-7B-Instruct on one L4)** · 2026-09-04 22:44 UTC · max_tokens 128
+
+| concurrency | requests | ok / 429 / failed | req/s | tokens/s | p50 | p95 | x-backend |
+|---|---|---|---|---|---|---|---|
+| 1 | 8 | 8 / 0 / 0 | 0.17 | 17 | 5.96 s | 6.28 s | vllm 8 |
+| 8 | 32 | 32 / 0 / 0 | 1.26 | 123 | 6.06 s | 6.55 s | vllm 32 |
+| 32 | 32 | 32 / 0 / 0 | 4.23 | 417 | 6.58 s | 7.13 s | vllm 32 |
+
+vLLM's /metrics scraped through the new ServiceMonitor (target up 30 s after Ready; 96 `vllm:` series; `vllm:generation_tokens_total` 7 075 after the run). The Bedrock run's first chat summoned the GPU through KEDA; EC2 had no g6.xlarge, g6.2xlarge or g5.xlarge in either zone at 22:33 and Karpenter launched a g6.xlarge on its retry three minutes later; vLLM was Ready 10 min 7 s after that chat. Afterwards `make gpu-down` emptied the pool in 6 min 14 s (KEDA paused at 0, NodeClaim removed, instance terminated, `gpu-check` passed).
+
+Reading it: Bedrock's Nova Micro is the low-latency floor at concurrency 1; vLLM on one L4 wins on tokens/s as concurrency rises (continuous batching), at the cost of p95. The comparison proper is Step 11's; this is its first row. The 429 column is the gateway's quota, not a backend limit.
+
 ## 5. Lessons (running list)
 
 - Homebrew core is open-source-only; vendor taps exist for a reason.
