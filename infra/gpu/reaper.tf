@@ -64,16 +64,16 @@ resource "aws_lambda_function" "reaper" {
   #checkov:skip=CKV_AWS_173:Environment variable is a NodePool name, not a secret
   #checkov:skip=CKV_AWS_272:Code signing for a 30-line function the pipeline deploys from git is process for no risk
   #checkov:skip=CKV_AWS_50:X-Ray tracing for a nightly one-call function is noise
-  function_name                  = "${var.project}-gpu-reaper"
-  role                           = aws_iam_role.reaper.arn
-  handler                        = "reaper.handler"
-  runtime                        = "python3.12"
-  architectures                  = ["arm64"]
-  timeout                        = 30
-  memory_size                    = 128
-  filename                       = data.archive_file.reaper.output_path
-  source_code_hash               = data.archive_file.reaper.output_base64sha256
-  reserved_concurrent_executions = 1
+  #checkov:skip=CKV_AWS_115:No reserved concurrency: this account's Lambda limit is below the unreserved minimum, so PutFunctionConcurrency is refused (Incident 34a); one nightly invocation needs none
+  function_name    = "${var.project}-gpu-reaper"
+  role             = aws_iam_role.reaper.arn
+  handler          = "reaper.handler"
+  runtime          = "python3.12"
+  architectures    = ["arm64"]
+  timeout          = 30
+  memory_size      = 128
+  filename         = data.archive_file.reaper.output_path
+  source_code_hash = data.archive_file.reaper.output_base64sha256
   environment {
     variables = { GPU_NODEPOOL = var.gpu_nodepool }
   }
