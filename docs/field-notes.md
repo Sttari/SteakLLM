@@ -274,6 +274,33 @@ Quotas: Running On-Demand G and VT instances 8 vCPUs, All G and VT Spot Instance
 **Incident 34a — the reaper's reserved concurrency was refused** (Sep 4 2026, Step 9.2)
 `PutFunctionConcurrency` returned 400: this account's Lambda concurrency limit is too low to reserve any without breaching AWS's unreserved minimum. The apply stopped at 30 of 33 resources (the schedule target and permission were the missing ones). Removed the reservation with a checkov skip and a reason (PR #59); the second apply completed the three. *Lesson:* a checkov "best practice" can be an account-limit landmine; read the error's request id line, it names the API.
 
+**Incident 34b — the bootstrap tunnel reached the NAT but not the API: the cluster security group admits only itself** (Sep 4 2026, Step 9.3)
+*Symptom:* `make bootstrap-argo` opened the Session Manager port-forward and died on `kubectl get --raw /healthz`; an SSM probe from the NAT instance to the API's private address on 443 said BLOCKED.
+*Cause:* EKS's cluster security group allows inbound only from its own members (the node and the control-plane ENIs); the NAT instance carries a different group. The tunnel's last hop was refused at the door.
+*Fix:* one ingress rule on the cluster security group in `infra/eks`: 443 from the VPC's range (PR #63); the probe then said REACHED and the bootstrap took 6 min. IAM still decides who may speak.
+*Lesson:* a tunnel is two hops; test the second one from the middle box (SSM run-command is a fine probe) before blaming the first.
+
+**Incident 35 — the weights guard crashed on an attribute that does not exist** (Sep 4 2026, Step 9.3)
+`except s3.exceptions.ClientError` → `AttributeError`: boto3 clients expose modelled service errors (`NoSuchKey`, `NoSuchBucket`), not the generic `ClientError`; that one lives in `botocore.exceptions`. The first-error rule paid off: the traceback's last line named the attribute. *Fix:* `from botocore.exceptions import ClientError`. *Lesson:* a guard that has never seen its own error path has not been tested; make the first run hit the 404 on purpose.
+
+**Incident 35b — Argo could not replace the Jobs: `Replace=true` alone is refused** (Sep 4 2026, Step 9.3)
+A Job is immutable and carries a generated `spec.selector`; a PUT with the new manifest fails on the selector. Argo needs `Replace=true,Force=true` (delete, then create). *Lesson:* for one-shot Jobs under GitOps, the sync option is delete-then-create by design; put it in the annotation on day one.
+
+**Incident 35c — the download was OOM-killed at 2 GiB; the pinned crane tag did not exist and the versioned image has no shell** (Sep 4 2026, Step 9.3)
+`snapshot_download` with the default eight workers holds several 4 GB shards in flight; the container died at its 2 GiB limit. *Fix:* 6 GiB limit and `max_workers=2` (the node has 16 GiB). Separately `gcr.io/go-containerregistry/crane:v0.22.1` was not a tag, and the versioned crane images are distroless (no `sh` for a `sh -c` command): the Job uses `crane:debug` pinned by its arm64 digest. *Lesson:* pin by digest, and check that the image has a shell before writing `sh -c`.
+
+**Incident 35d — `sh: s5cmd: not found`; the Job then deleted its own evidence** (Sep 4 2026, Step 9.3)
+*Symptom:* the weights pod's download finished (15.2 GB in under two minutes through the NAT) and the upload container crash-looped; when the back-off limit was hit the Job removed the pod, so `kubectl logs` had nothing to show and the 15 GB scratch volume was gone.
+*Cause:* the `peakcom/s5cmd` image ships the binary as `/s5cmd`, not on `PATH`. And `restartPolicy: OnFailure` restarts the container in place; at the limit the Job deletes the pod.
+*Fix:* Loki still had every line (Alloy ships each container's stdout as it happens), which is how the cause was read: `port-forward svc/loki` and one LogQL query `{namespace="steakllm", pod=~"mirror-weights.*"}`. Then `/s5cmd` by path and `restartPolicy: Never`, so a failed pod stays for inspection (PR #68).
+*Lesson:* the logging stack is not decoration; it is the flight recorder for anything that dies faster than you can look. Jobs that are debugged should use `Never`.
+
+**Incident 35e — s5cmd refused Pod Identity's credentials: "only loopback hosts are allowed"** (Sep 4 2026, Step 9.3)
+*Symptom:* `HTTP credential provider invalid endpoint host, "169.254.170.23", only loopback hosts are allowed` → `NoCredentialProviders`.
+*Cause:* Pod Identity serves credentials at a link-local address; SDKs older than late 2023 accept only loopback for a container credential endpoint (the ECS convention). s5cmd v2.3.0 vendors such a Go SDK. boto3 in the same pod had already used the same credentials without complaint (the guard's `head_object`).
+*Fix:* drop s5cmd; the one python container downloads and then uploads with boto3's multipart transfer (64 MiB parts, 8 in flight) and prints the object count and size it finds afterwards (PR #69). 15.2 GB uploaded in about two minutes over the S3 gateway endpoint.
+*Lesson:* Pod Identity's tell is that exact "only loopback hosts" line; any tool that prints it needs a newer SDK or a different tool. Prove credentials with the SDK you will ship, not a neighbour.
+
 **Open item — ECR scan-on-push did not scan the multi-arch images** (Sep 2 2026, Step 6.12)
 The five repositories have `scan_on_push = true` and the registry is in `BASIC` scanning mode, yet after the first release every image — the `sha-3432f6a` index and its two platform children — shows scan status `None`. Basic scanning does not scan an image index, and the children pushed as part of one did not trigger a scan either. Trivy in `release.yml` is the gate that actually ran (0 fixable CRITICALs per image), so nothing shipped unscanned. Candidates: a post-push step in `release.yml` that calls `ecr:StartImageScan` on each child digest and waits for the verdict (the release role would need that one action; bootstrap apply), or enhanced scanning (Inspector, paid) at Step 11. Decide before Step 8 pulls these images onto the node.
 
@@ -311,6 +338,16 @@ First release (6.12, Sep 2 2026, run 33684077969 on `main` at `3432f6a`): five j
 
 First pipeline apply: **2026-09-01T20:18:17Z** — `infra/ecr`, 10 resources, by `assumed-role/steakllm-ci-apply` (CloudTrail), ~5 s of apply after the approval click; run 33554383123. From Step 7: rebuild time (`terraform destroy` → `apply`). From Step 9: GPU summon-to-`/health` time, idle-to-removed time, the load-test table (c=1/8/32). From Step 10: upload-to-searchable and upload-to-email latency, drill results. From Step 11: tokens per GPU-hour and $/Mtok beside Bedrock.
 
+**Step 9.3 — mirroring into the account** (Sep 4 2026, one t4g.xlarge spot node, through the fck-nat t4g.nano)
+
+| What | Size | Time | Notes |
+|---|---|---|---|
+| `crane copy` vllm/vllm-openai:v0.28.0 → ECR | 8.63 GB | 1 min 11 s | blob-by-blob stream, Docker Hub → NAT → ECR |
+| Hugging Face download, Qwen2.5-7B-Instruct | 15.2 GB, 11 files | ≈ 1 min 55 s | `max_workers=2`, 6 GiB limit; peak ≈ 130 MB/s through the nano NAT |
+| boto3 upload to the models bucket | 15.2 GB | ≈ 2 min | S3 gateway endpoint, 64 MiB parts, 8 in flight |
+| whole weights Job (pip + guard + both) | | 4 min 4 s | |
+| guarded re-run of the image Job | | 35 s | pip install + `describe_images`; nothing pushed |
+
 ## 5. Lessons (running list)
 
 - Homebrew core is open-source-only; vendor taps exist for a reason.
@@ -337,6 +374,10 @@ First pipeline apply: **2026-09-01T20:18:17Z** — `infra/ecr`, 10 resources, by
 - A cluster you have not rebuilt from git is a pet; the number (40 min) belongs in the README, and it will drift — measure it again after Step 8.
 - zsh does not word-split a variable holding a command (`$C build …` fails "no such file"); use a shell function. Likewise `${PIPESTATUS[0]}` is bash; zsh spells it `$pipestatus[1]` — write the command's output to a file and read `$?` instead.
 
+
+- **The logging stack is the flight recorder.** When a Job deletes its failed pod, `kubectl logs` is empty but Loki has every line; `port-forward svc/loki` plus one LogQL query beats re-running the failure with a debugger attached (Incident 35d).
+- **Pod Identity needs SDKs from late 2023 on.** The tell is "only loopback hosts are allowed" for 169.254.170.23; older vendored SDKs (s5cmd v2.3.0) cannot use it. Prove a credential path with the SDK the workload will actually use (Incident 35e).
+- **One container beats two when the second brings a new SDK.** The download/upload split looked tidy, but the split introduced a second credential client with its own bugs; boto3 already had the job.
 
 ## 6. Small stumbles (tooling and habits — not incidents, still time)
 
@@ -370,3 +411,7 @@ Everything that went sideways for a minute or more, whether or not it earned an 
 - `apply.yml` runs its module matrix one job at a time, and every job references the `production` environment, so GitHub asks for one approval *per module*: the first click released `apply (ecr)` and `apply (network)` then waited at its own gate. Either keep it (each module explicitly approved) or fold the matrix into one job with one gate; decided in 7.7. → Meanwhile: one `pending_deployments` call per module.
 - `gh run watch` on a run whose next job is *waiting* at a gate blocks forever (ten minutes lost to a tool timeout). → Poll `gh run view --json jobs` and read the status first; watch only a job that is `in_progress`.
 - The guard hook blocked the shell command that was writing this very section, because the prose named the file-printing commands and the env file on one line. → Prose goes in through the editor tools; the shell only appends the file.
+- **`sed` with `#` as delimiter and a `#` in the replacement** → "bad flag in substitute command"; use `|`. (Sep 4)
+- **macOS has no `tac` and the system python has no `yaml`** — `tail -r`, and let pre-commit's check-yaml validate. (Sep 4)
+- **`gh pr merge --auto` is refused** — the repository has auto-merge off; wait for `gh pr checks` then merge. (Sep 4)
+- **A polling loop that matches the wrong column** — `kubectl get svc -A` prints ports as `3100/TCP`, not `:3100`; the empty namespace turned `kubectl -n  port-forward` into a plugin lookup. Check the row format before writing the grep. (Sep 4)
