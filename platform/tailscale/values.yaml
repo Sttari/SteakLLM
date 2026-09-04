@@ -5,6 +5,8 @@ oauthSecretVolume:
     secretName: operator-oauth
 operatorConfig:
   hostname: steakllm-k8s-operator
+  # the chart's default asks for tag:k8s-operator; the OAuth client owns tag:k8s only (Incident 31)
+  defaultTags: tag:k8s
   nodeSelector:
     steakllm.io/pool: cpu
   resources:
