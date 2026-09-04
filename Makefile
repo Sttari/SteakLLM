@@ -80,7 +80,7 @@ bootstrap-argo: ## the one hand step, through an SSM tunnel: helm install argocd
 	helm install argocd argo/argo-cd --version 10.7.0 --namespace argocd --create-namespace -f platform/argocd/values.yaml --wait --timeout 10m
 	kubectl apply -f platform/root.yaml
 	@echo "waiting for the Tailscale router to come up (then the tunnel can go)…"; n=0; until kubectl get connector steakllm-vpc -o jsonpath='{.status.conditions[?(@.type=="ConnectorReady")].status}' 2>/dev/null | grep -q True || [ $$n -ge 60 ]; do sleep 15; n=$$((n+1)); done
-	@kill $$(cat /tmp/steakllm-ssm-tunnel.pid) 2>/dev/null; rm -f /tmp/steakllm-ssm-tunnel.pid
+	@pkill -f AWS-StartPortForwardingSessionToRemoteHost 2>/dev/null; rm -f /tmp/steakllm-ssm-tunnel.pid # the pid file names the shell, not the plugin
 	aws eks update-kubeconfig --name steakllm --region us-east-1
 	@echo "Argo is bootstrapped; the tailnet carries kubectl from here: kubectl -n argocd get applications -w"
 
