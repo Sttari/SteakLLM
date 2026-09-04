@@ -68,7 +68,7 @@ spec:
             - 0.0.0.0
             - --port
             - {{ .Values.service.port | quote }}
-            - --disable-log-requests
+            # (no --disable-log-requests: 0.28 dropped it; request logging is off unless --enable-log-requests — Incident 37)
           env:
             - { name: HOME, value: /tmp }
             - { name: VLLM_CACHE_ROOT, value: /tmp/vllm }
