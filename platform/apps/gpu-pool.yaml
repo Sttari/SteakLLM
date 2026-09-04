@@ -1,0 +1,27 @@
+# The GPU pool's rules (ADR-0011): the EC2NodeClass (what a GPU node is made of), the NodePool gpu (how many,
+# which type, when to remove) and the NVIDIA device plugin that advertises nvidia.com/gpu on such nodes.
+# No machine exists until a pod asks for nvidia.com/gpu. Wave 5: after Karpenter's CRDs; the retry covers
+# the first sync racing them.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gpu-pool
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Sttari/SteakLLM.git
+    targetRevision: main
+    path: platform/gpu-pool
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff: { duration: 30s, factor: 2, maxDuration: 5m }

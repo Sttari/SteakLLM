@@ -1,0 +1,20 @@
+# Karpenter 1.14.1 on a one-node cluster: one replica (the chart's two would leave one Pending on
+# anti-affinity), on the CPU node, small. Credentials come from Pod Identity (karpenter/karpenter,
+# infra/gpu), so the service account carries no annotation. The cluster endpoint is discovered
+# through eks:DescribeCluster, which the role allows.
+replicas: 1
+nodeSelector:
+  steakllm.io/pool: cpu
+serviceAccount:
+  name: karpenter
+controller:
+  resources:
+    requests: { cpu: 200m, memory: 512Mi }
+    limits: { cpu: "1", memory: 1Gi }
+  securityContext:
+    seccompProfile:
+      type: RuntimeDefault # the karpenter room enforces the restricted profile
+settings:
+  clusterName: steakllm
+  interruptionQueue: steakllm-karpenter # spot reclaim, rebalance, scheduled-change and state-change events (infra/gpu)
+logLevel: info

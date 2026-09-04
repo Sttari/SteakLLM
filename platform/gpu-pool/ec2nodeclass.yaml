@@ -1,0 +1,30 @@
+# What a GPU node is made of. The AMI is the EKS-optimized AL2023 NVIDIA build for 1.36, pinned to a
+# release (driver and container toolkit on board); subnets and the cluster security group are found by
+# the karpenter.sh/discovery tag (private subnets only: no public address). The node wears the same
+# IAM role as the CPU node; Karpenter makes the instance profile itself (infra/gpu allows exactly that).
+# The instance store (g6.xlarge: one 250 GB NVMe) becomes the node's ephemeral storage, where 9.5 puts the
+# weights. IMDSv2 only, one hop.
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: gpu
+spec:
+  amiSelectorTerms:
+    - alias: al2023@v20260827 # /aws/service/eks/optimized-ami/1.36/amazon-linux-2023/x86_64/nvidia/recommended → 1.36.3-20260827
+  role: steakllm-eks-node
+  subnetSelectorTerms:
+    - tags: { karpenter.sh/discovery: steakllm }
+  securityGroupSelectorTerms:
+    - tags: { karpenter.sh/discovery: steakllm }
+  instanceStorePolicy: RAID0
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs: { volumeSize: 100Gi, volumeType: gp3, encrypted: true, deleteOnTermination: true }
+  metadataOptions:
+    httpEndpoint: enabled
+    httpProtocolIPv6: disabled
+    httpPutResponseHopLimit: 1
+    httpTokens: required
+  tags:
+    Project: steakllm
+    steakllm.io/pool: gpu # the reaper Lambda looks for karpenter.sh/nodepool, which Karpenter adds itself
