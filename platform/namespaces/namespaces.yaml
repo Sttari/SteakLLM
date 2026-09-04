@@ -78,4 +78,8 @@ metadata:
   name: tailscale
   labels:
     steakllm.io/tier: platform
-    pod-security.kubernetes.io/enforce: baseline # the proxies need NET_ADMIN for WireGuard
+    # The proxies add NET_ADMIN for WireGuard, which baseline refuses (only privileged admits added
+    # capabilities of that kind) — Incident 31b. Warn/audit at baseline so anything else is noticed.
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/warn: baseline
+    pod-security.kubernetes.io/audit: baseline
