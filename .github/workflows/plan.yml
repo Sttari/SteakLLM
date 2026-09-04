@@ -29,7 +29,6 @@ jobs:
       TF_VAR_github_owner_id: ${{ github.repository_owner_id }}
       TF_VAR_github_repo_id: ${{ github.repository_id }}
       TF_VAR_budget_email: ${{ secrets.TF_VAR_BUDGET_EMAIL }}
-      TF_VAR_admin_cidr: ${{ vars.TF_VAR_ADMIN_CIDR }}                    # eks: the one /32 on the public endpoint (ADR-0008)
       TF_VAR_admin_principal_arn: ${{ vars.TF_VAR_ADMIN_PRINCIPAL_ARN }}  # eks: the laptop's access entry
     steps:
       - uses: actions/checkout@v5

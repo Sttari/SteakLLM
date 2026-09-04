@@ -22,15 +22,6 @@ variable "cluster_version" {
   default     = "1.36"
 }
 
-variable "admin_cidr" {
-  description = "The one address allowed to reach the cluster's public API endpoint until Step 8's tailnet exists (ADR-0008). Thomas's current address as a /32; a repository variable (TF_VAR_admin_cidr), never a file in git."
-  type        = string
-  validation {
-    condition     = can(cidrnetmask(var.admin_cidr)) && endswith(var.admin_cidr, "/32")
-    error_message = "admin_cidr must be a single IPv4 address as a /32."
-  }
-}
-
 variable "admin_principal_arn" {
   description = "The laptop identity that gets cluster-admin through an access entry (an IAM user or role ARN; a repository variable, TF_VAR_admin_principal_arn)."
   type        = string
