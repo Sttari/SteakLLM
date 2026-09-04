@@ -36,7 +36,6 @@ resource "aws_cloudwatch_log_group" "cluster" {
 # ---- the cluster -----------------------------------------------------------------------------------
 
 resource "aws_eks_cluster" "this" {
-  #checkov:skip=CKV_AWS_39:Public endpoint stays on, restricted to one /32, until Step 8's tailnet exists (ADR-0008); then endpoint_public_access = false
   #checkov:skip=CKV_AWS_339:checkov's list of supported versions lags AWS; 1.36 is the default standard-support version (aws eks describe-cluster-versions, Sep 2 2026)
   #checkov:skip=CKV_AWS_58:Secrets are envelope-encrypted with an AWS-owned KMS key by default on current EKS; a customer key adds $1/month and a key to manage for the same guarantee
   name     = var.cluster_name
@@ -51,8 +50,7 @@ resource "aws_eks_cluster" "this" {
   vpc_config {
     subnet_ids              = local.private_subnet_ids
     endpoint_private_access = true
-    endpoint_public_access  = true # interim (ADR-0008): one address, until Step 8
-    public_access_cidrs     = [var.admin_cidr]
+    endpoint_public_access  = false # the API is reached over the tailnet's subnet router only (8.9, ADR-0010); Step 7's /32 interim is over
   }
 
   # All five log streams: api, audit and authenticator are the ones we read; the other two are cheap
