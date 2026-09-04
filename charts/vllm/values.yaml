@@ -1,0 +1,10 @@
+# vLLM on the GPU pool (Step 9.5 completes this chart). The model is Qwen/Qwen2.5-7B-Instruct
+# (ADR-0011): 15.2 GB fp16, Apache-2.0, ungated; it fits one L4 (22.9 GB usable) with an 8k context at
+# 90 % memory utilisation. Weights come from s3://steakllm-models-066591056087/qwen2.5-7b-instruct/
+# (mirrored once, 9.3); the image from ECR steakllm/vllm (v0.28.0, amd64, mirrored once, 9.3).
+model:
+  name: Qwen/Qwen2.5-7B-Instruct
+  s3Prefix: qwen2.5-7b-instruct/
+  maxModelLen: 8192
+  gpuMemoryUtilization: "0.9"
+  dtype: half

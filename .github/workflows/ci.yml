@@ -58,7 +58,7 @@ jobs:
       - name: kube-linter on our charts (rendered)
         run: |
           curl -sfL https://github.com/stackrox/kube-linter/releases/download/v0.8.3/kube-linter-linux.tar.gz | tar xz -C /usr/local/bin kube-linter
-          for c in charts/*/; do helm template "$(basename "$c")" "$c" > "/tmp/$(basename "$c").yaml"; done
+          for c in charts/*/; do [ -f "$c/Chart.yaml" ] || continue; helm template "$(basename "$c")" "$c" > "/tmp/$(basename "$c").yaml"; done  # a values-only stub (charts/vllm until 9.5) is not a chart yet
           kube-linter lint /tmp/*.yaml --config .kube-linter.yaml
 
   # Formatting and internal consistency of every Terraform module.
