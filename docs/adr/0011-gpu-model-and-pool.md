@@ -1,6 +1,6 @@
 # 0011 — The GPU pool: Qwen2.5-7B-Instruct on one g6.xlarge, on-demand first, summoned by Karpenter and KEDA, weights and image mirrored into our account
 
-Status: proposed (accepted when 9.5's summon drill meets the eight-minute target)
+Status: accepted (Sep 4 2026, after the summon, demand and reaper drills; amended below)
 Date: 2026-09-04
 
 ## Context
@@ -30,3 +30,13 @@ Step 9 adds the one expensive machine: a GPU node that must exist only while the
 - The GPU node is x86 while the CPU node is arm64: vLLM's image is single-arch, our five services are multi-arch; nothing else changes.
 - The models bucket and the ECR image survive cluster teardowns; Karpenter, KEDA and the NodePool are rebuilt by Argo with the cluster.
 - A GPU node alive at teardown time would be orphaned and billing (Karpenter dies with the cluster): `cluster-down` checks, and the nightly Lambda is the last line.
+
+## Amendments (Sep 4 2026, from the drills)
+
+- **A menu, not a type.** The clean summon waited ten minutes for `g6.xlarge` capacity in both zones (Incident 41). The NodePool now allows `g6.xlarge`, `g6.2xlarge` (same L4) and `g5.xlarge` (A10G, 24 GB), cheapest first, still on-demand, still one machine (`limits.nvidia.com/gpu: 1`).
+- **The eight minutes hold "when capacity is available":** 7 min 10 s from the scale command to `/health` (node Ready in 38 s; five minutes are the 8.6 GB image and the 15 GB weights arriving; vLLM starts in ≈ 2 min 10 s). Through KEDA, one chat to a chat answered by vLLM took 8 min 53 s. A node-local image cache or a snapshot is the lever (Step 11).
+- **KEDA's triggers are the Kafka topic counters as Prometheus scrapes them** (`rate(kafka_server_brokertopicmetrics_messagesin_total{topic="chats"|"documents"}[5m]) > 0`), not the gateway's in-memory demand counter: facts in the log are what other components can act on. A chat that lands before Prometheus's first sample of a restarted broker is invisible to `rate()` (Incident 42).
+- **Idle timers add up in series:** rate window 5 m + KEDA cooldown 15 m + Karpenter `consolidateAfter` 15 m + drain ≈ 40 min from the last chat to the instance's disappearance, not fifteen. Which one owns the number is Step 11's call (the reaper and `cluster-down` do not care).
+- **KEDA owns the replica count:** Argo syncs with `RespectIgnoreDifferences=true` (Incident 38), and a hand `scale` is reverted within a poll; the pause annotation is the hand-brake, which `make gpu-down` pulls before `cluster-down`.
+- **KEDA's pause freezes its status:** with `paused-replicas` set, the ScaledObject's `Active` condition keeps its last value (it read True for ten minutes with the Prometheus query at zero). Read the query, not the condition, while paused.
+- **The image wanted three fixes** on first contact: `--disable-log-requests` no longer exists in 0.28, the Service name `vllm` injects `VLLM_PORT` (service links off), and the gateway forwards its mode names `llm`/`docs` as the model (served names; the gateway mapping is a Step 10 open item).
