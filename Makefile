@@ -74,17 +74,21 @@ cluster-down: ## take the workloads down through Argo, remove their volumes, the
 	-kubectl get svc -A --field-selector spec.type=LoadBalancer --no-headers 2>/dev/null | awk '{print "-n "$$1" "$$2}' | xargs -r -L1 kubectl delete svc
 	@until [ "$$(aws elbv2 describe-load-balancers --query 'length(LoadBalancers)' --output text)" = 0 ]; do echo "waiting for load balancers to go…"; sleep 15; done
 	@echo "2/4 Taking the workloads down through Argo (cascade), so their claims can be released…"
-	@# every workload Application gets the cascade finalizer; the root's own finalizer then removes them and their resources.
-	@# argocd, root, namespaces, storage and network-policies keep no finalizer: Argo must outlive its children, and namespaces would take everything with them.
-	-for a in $$(kubectl -n argocd get applications -o jsonpath='{.items[*].metadata.name}'); do case $$a in argocd|root|namespaces|storage|network-policies) ;; *) kubectl -n argocd patch application $$a --type merge -p '{"metadata":{"finalizers":["resources-finalizer.argocd.argoproj.io"]}}' >/dev/null;; esac; done
-	-kubectl -n argocd delete application root --wait=true --timeout=10m
-	@until [ "$$(kubectl get pods -A --no-headers 2>/dev/null | grep -vE '^(kube-system|argocd|tailscale|external-secrets) ' | wc -l | tr -d ' ')" = 0 ]; do echo "waiting for workload pods to go…"; sleep 15; done
+	@# Every workload Application gets the cascade finalizer, then is removed. Kept alive: argocd (must outlive its
+	@# children), root (removed last, without cascade), namespaces (would take everything with them), storage,
+	@# network-policies, and tailscale + tailscale-config — the subnet router is the laptop's ONLY path to the
+	@# private API; taking it down mid-run cut this very target off from the cluster (Incident 33b).
+	-for a in $$(kubectl -n argocd get applications -o jsonpath='{.items[*].metadata.name}'); do case $$a in argocd|root|namespaces|storage|network-policies|tailscale|tailscale-config) ;; *) \
+	  kubectl -n argocd patch application $$a --type merge -p '{"metadata":{"finalizers":["resources-finalizer.argocd.argoproj.io"]}}' >/dev/null && kubectl -n argocd delete application $$a --wait=false;; esac; done
+	-kubectl -n argocd patch application root --type merge -p '{"metadata":{"finalizers":null}}' >/dev/null
+	-kubectl -n argocd delete application root --wait=false
+	@n=0; until [ "$$(kubectl get pods -A --request-timeout=10s --no-headers 2>/dev/null | grep -vE '^(kube-system|argocd|tailscale|external-secrets) ' | wc -l | tr -d ' ')" = 0 ] || [ $$n -ge 40 ]; do echo "waiting for workload pods to go…"; sleep 15; n=$$((n+1)); done
 	@echo "3/4 Deleting every PersistentVolumeClaim so the EBS driver removes the volumes (a torn-down cluster cannot)…"
 	-kubectl delete pvc --all --all-namespaces --wait=true --timeout=5m
-	@until [ "$$(aws ec2 describe-volumes --filters Name=tag-key,Values=kubernetes.io/created-for/pvc/name --query 'length(Volumes)' --output text)" = 0 ]; do echo "waiting for PVC volumes to go…"; sleep 15; done
+	@n=0; until [ "$$(aws ec2 describe-volumes --filters Name=tag-key,Values=kubernetes.io/created-for/pvc/name --query 'length(Volumes)' --output text)" = 0 ] || [ $$n -ge 20 ]; do echo "waiting for PVC volumes to go…"; sleep 15; n=$$((n+1)); done
 	@echo "4/4 Tearing eks down through the pipeline…"
 	gh workflow run teardown.yml -f module=eks -f confirm=eks && sleep 30 && RUN=$$(gh run list --workflow teardown --limit 1 --json databaseId --jq '.[0].databaseId') && \
 	until [ "$$(gh api repos/Sttari/SteakLLM/actions/runs/$$RUN/pending_deployments --jq length)" = 1 ]; do sleep 15; done && \
 	gh api -X POST repos/Sttari/SteakLLM/actions/runs/$$RUN/pending_deployments -F 'environment_ids[]=$(ENV_ID)' -f state=approved -f comment="cluster-down" >/dev/null && echo "teardown approved" && \
 	until [ "$$(gh run view $$RUN --json status --jq .status)" = completed ]; do sleep 20; done && gh run view $$RUN --json conclusion --jq '"teardown: " + .conclusion'
-	@echo "meter check:" && aws eks describe-cluster --name steakllm --query cluster.status --output text 2>&1 | grep -oE 'ResourceNotFoundException|ACTIVE|DELETING' && echo "load balancers: $$(aws elbv2 describe-load-balancers --query 'length(LoadBalancers)' --output text) · volumes: $$(aws ec2 describe-volumes --query 'length(Volumes)' --output text)"
+	@echo "meter check:" && aws eks describe-cluster --name steakllm --query cluster.status --output text 2>&1 | grep -oE 'ResourceNotFoundException|ACTIVE|DELETING' && echo "load balancers: $$(aws elbv2 describe-load-balancers --query 'length(LoadBalancers)' --output text) · volumes: $$(aws ec2 describe-volumes --query 'length(Volumes)' --output text) · orphaned (available): $$(aws ec2 describe-volumes --filters Name=status,Values=available --query 'length(Volumes)' --output text)"
