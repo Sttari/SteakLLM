@@ -77,3 +77,7 @@ autoscaling:
   topics: [chats, documents]
   pollingInterval: 15
   cooldownPeriod: 900
+
+# 9.8: vLLM's /metrics into Prometheus (vllm:num_requests_running, vllm:generation_tokens_total, KV-cache use).
+metrics:
+  serviceMonitor: true
