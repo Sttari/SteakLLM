@@ -307,6 +307,33 @@ A Job is immutable and carries a generated `spec.selector`; a PUT with the new m
 *Fix:* PR #72 adds `ec2:DescribeInstanceStatus` to the regional read list and `iam:ListInstanceProfiles` in its own statement (it accepts no narrower resource); then a `rollout restart` of the controller so the health-check feature re-evaluates. No write action widened.
 *Lesson:* read a new controller's first five minutes of log before calling it healthy; "Synced/Healthy" is Argo's view of the pods, not of the permissions. A 403 that names the API is the cheapest bug there is.
 
+**Incident 37 — vLLM 0.28 does not know `--disable-log-requests`** (Sep 4 2026, Step 9.5)
+The first summon launched the node in 38 s and had the weights on the NVMe by five minutes; vLLM exited 2 at once: `unrecognized arguments: --disable-log-requests`. The flag was removed (request logging is off by default; `--enable-log-requests` is the opt-in). *Fix:* dropped (PR #75). *Lesson:* flags copied from memory are a version guess; the image's `--help` (or its first crash) is the truth.
+
+**Incident 38 — the fix's sync un-summoned the pod: `ignoreDifferences` does not stop a sync from writing the field** (Sep 4 2026, Step 9.5)
+*Symptom:* after PR #75 merged, the vLLM Deployment was back at `replicas: 0` and the pod gone; the GPU node sat empty.
+*Cause:* `ignoreDifferences` on `/spec/replicas` hides drift from the diff, but Argo still applies the full manifest on a sync, chart value included.
+*Fix:* the sync option `RespectIgnoreDifferences=true` (PR #76): a sync leaves ignored fields as they are. KEDA (9.6) needs the same.
+*Lesson:* "ignored in the diff" and "left alone on write" are two different settings in Argo; anything another controller owns (replicas, annotations set by operators) needs both.
+
+**Incident 39 — the engine core refused to start because Kubernetes handed it `VLLM_PORT=tcp://172.20.2.32:8000`** (Sep 4 2026, Step 9.5)
+*Symptom:* weights loaded in 39 s, KV cache sized, CUDA graphs captured, then `ValueError: VLLM_PORT 'tcp://172.20.2.32:8000' appears to be a URI`.
+*Cause:* Kubernetes injects Docker-style link variables named after every Service in the namespace (`<NAME>_PORT`, `<NAME>_SERVICE_HOST`, …). The Service is named `vllm`, so the pod gets `VLLM_PORT`, which vLLM reads as one of its own environment settings.
+*Fix:* `enableServiceLinks: false` on the pod (PR #77); nothing here uses those variables. vLLM's own error message names the cause, which is how it was read in one look.
+*Lesson:* a Service whose name matches a program's env-var prefix is a trap; disable service links on any pod that reads `<PROGRAM>_*` variables.
+
+**Incident 40 — the gateway forwarded its mode name `llm` as the model; vLLM answered 404 and the gateway fell back to Bedrock** (Sep 4 2026, Step 9.5)
+*Symptom:* the first chat through the gateway returned 200 with `x-backend: bedrock`; vLLM's log showed `The model 'llm' does not exist` on the forwarded request.
+*Cause:* the gateway's OpenAI surface has two "models", `llm` and `docs` (its modes, ADR-0006), and passes that name through to the backend; vLLM serves only the names it is given. The fallback worked exactly as designed, which is why nothing looked broken from the outside.
+*Fix:* vLLM also serves `llm` and `docs` (PR #78). *Open item (Step 10):* the gateway should map mode → backend model id instead of passing the mode through.
+*Lesson:* a graceful fallback hides a misconfiguration from the client; read the backend's log, not just the response, when proving a new path.
+
+**Incident 41 — the clean summon waited ten minutes for g6.xlarge capacity: a one-type NodePool is not a pool** (Sep 4 2026, Step 9.5)
+*Symptom:* the third summon's NodeClaim showed no instance type for 644 s; Karpenter's log: `InsufficientInstanceCapacity: We currently do not have sufficient g6.xlarge capacity in the Availability Zone you requested`, three launches failed (18:55, 18:59, 19:02), and between them `nodepool requirements filtered out all available instance types`; the fourth launch succeeded in us-east-1b at 19:05.
+*Cause:* the NodePool allowed exactly one type, one capacity type, two zones. When both zones were dry, Karpenter had nothing else to try; its "offering unavailable" memory is three minutes, hence the cadence. Incident 27 was the same lesson for the CPU node.
+*Fix:* a menu of one-GPU, 24 GB types, cheapest first — g6.xlarge, g6.2xlarge (same L4), g5.xlarge (A10G) — with `limits.cpu 8` so the 2xlarge fits and `nvidia.com/gpu 1` still capping the pool at one machine (PR #79). Spot stays off (9.1); it would be the next widening.
+*Lesson:* capacity is a property of the minute, not of the region. Every NodePool needs a menu and every summon time needs the phrase "when capacity is available".
+
 **Open item — ECR scan-on-push did not scan the multi-arch images** (Sep 2 2026, Step 6.12)
 The five repositories have `scan_on_push = true` and the registry is in `BASIC` scanning mode, yet after the first release every image — the `sha-3432f6a` index and its two platform children — shows scan status `None`. Basic scanning does not scan an image index, and the children pushed as part of one did not trigger a scan either. Trivy in `release.yml` is the gate that actually ran (0 fixable CRITICALs per image), so nothing shipped unscanned. Candidates: a post-push step in `release.yml` that calls `ecr:StartImageScan` on each child digest and waits for the verdict (the release role would need that one action; bootstrap apply), or enhanced scanning (Inspector, paid) at Step 11. Decide before Step 8 pulls these images onto the node.
 
@@ -354,6 +381,26 @@ First pipeline apply: **2026-09-01T20:18:17Z** — `infra/ecr`, 10 resources, by
 | whole weights Job (pip + guard + both) | | 4 min 4 s | |
 | guarded re-run of the image Job | | 35 s | pip install + `describe_images`; nothing pushed |
 
+**Step 9.5 — the summon drill** (Sep 4 2026, g6.xlarge on-demand, us-east-1a, fresh node each time)
+
+| Stage (from `scale --replicas=1`) | Time |
+|---|---|
+| NodeClaim created / instance launched | 5 s |
+| node Ready | 38 s |
+| `nvidia.com/gpu: 1` advertised (device plugin) | 50 s |
+| weights S3 → NVMe (15 GB, `aws s3 sync`) and the 8.6 GB image pulled | ≈ 5 min 26 s (both, sequential) |
+| vLLM start → `/health` 200 (weights → GPU 35–39 s, graphs 9 s) | ≈ 2 min 10 s |
+| **summon → `/health` 200** | **17 min 16 s in the clean run, of which 10 min 6 s was an EC2 capacity wait (Incident 41); 7 min 10 s when capacity is there (node Ready in 38 s in runs 1–2, plus 6 min 32 s from node Ready to /health measured in run 3)** |
+| chat via the gateway, `x-backend: vllm` | 2.0 s, 29 tokens |
+
+| Stage (from `scale --replicas=0`) | Run 1 | Run 2 |
+|---|---|---|
+| Karpenter "disrupting node(s), delete" (consolidateAfter 15 m) | 15 min 14 s | 15 min 12 s |
+| node and NodeClaim gone | 21 min 20 s | gone 21 min 44 s |
+| EC2 instance gone | 21 min 30 s | |
+
+Run 1's clock survived a spot reclaim of the CPU node (Karpenter itself restarted at 17:51): the "last pod" time lives on the NodeClaim.
+
 ## 5. Lessons (running list)
 
 - Homebrew core is open-source-only; vendor taps exist for a reason.
@@ -384,6 +431,12 @@ First pipeline apply: **2026-09-01T20:18:17Z** — `infra/ecr`, 10 resources, by
 - **The logging stack is the flight recorder.** When a Job deletes its failed pod, `kubectl logs` is empty but Loki has every line; `port-forward svc/loki` plus one LogQL query beats re-running the failure with a debugger attached (Incident 35d).
 - **Pod Identity needs SDKs from late 2023 on.** The tell is "only loopback hosts are allowed" for 169.254.170.23; older vendored SDKs (s5cmd v2.3.0) cannot use it. Prove a credential path with the SDK the workload will actually use (Incident 35e).
 - **One container beats two when the second brings a new SDK.** The download/upload split looked tidy, but the split introduced a second credential client with its own bugs; boto3 already had the job.
+
+- **Argo: "ignored in the diff" ≠ "left alone on write".** `ignoreDifferences` needs `RespectIgnoreDifferences=true` for any field another controller owns (Incident 38).
+- **Service names are env-var prefixes.** `enableServiceLinks: false` on any pod whose program reads `<NAME>_*` variables (Incident 39).
+- **A fallback that works hides the bug.** Prove a new backend from its own log, not from a 200 (Incident 40).
+- **The summon is dominated by bytes, not by the machine.** The node is Ready in 38 s; five of the seven minutes are 24 GB of image and weights arriving. A node-local image cache or a snapshot would halve it (open item for Step 11).
+- **A NodePool with one type is a single point of capacity failure** (Incident 41, after Incident 27). Menus, and the honest phrase "when capacity is available" next to every summon time.
 
 ## 6. Small stumbles (tooling and habits — not incidents, still time)
 
@@ -424,3 +477,5 @@ Everything that went sideways for a minute or more, whether or not it earned an 
 - **"no subnets found" from Karpenter's pricing, metrics and disruption controllers for about two minutes** after the EC2NodeClass was created, while its status already listed two subnets. It is the window before the controllers' cache sees the status; it stops by itself. The source (`instancetype.List` → `nodeClass.ZoneInfo()` → `status.subnets`) says so; no fix. (Sep 4)
 - **CI `terraform validate` failed on a provider download** (`releases.hashicorp.com … connection reset by peer`): not ours; `gh run rerun <id> --failed`. (Sep 4)
 - **A python f-string with an escaped quote inside the braces** is a SyntaxError; build the string outside. (Sep 4)
+- **A spot reclaim mid-drill** took the CPU node (m7g.xlarge → m6g.xlarge at 17:50) and with it the Tailscale router and Karpenter for a minute; kubectl over the tailnet was back three minutes later, the SSM tunnel covered the gap. (Sep 4)
+- **The drill script watched a pod by name** and lost it when the Deployment rolled; watch the Deployment's ready count instead. (Sep 4)
