@@ -57,16 +57,32 @@ demo: ## drive the sample PDF through the stack by hand: MinIO → Kafka → Oll
 # Both approve the production gates from the laptop with gh — the human is the one typing make.
 ENV_ID := 21032992457
 
-cluster-up: ## rebuild the cluster (apply.yml, four gates) and bootstrap Argo CD; ~25 min
+cluster-up: ## rebuild the cluster (apply.yml, five gates) and bootstrap Argo CD through an SSM tunnel; ~25 min
 	@gh workflow run apply.yml && sleep 30 && RUN=$$(gh run list --workflow apply --branch main --limit 1 --json databaseId --jq '.[0].databaseId') && echo "apply run $$RUN" && \
-	for gate in ecr network eks platform; do until [ "$$(gh api repos/Sttari/SteakLLM/actions/runs/$$RUN/pending_deployments --jq length)" = 1 ]; do sleep 15; done; \
-	  gh api -X POST repos/Sttari/SteakLLM/actions/runs/$$RUN/pending_deployments -F 'environment_ids[]=$(ENV_ID)' -f state=approved -f comment="cluster-up: $$gate" >/dev/null && echo "$$gate approved"; sleep 45; done && \
+	for gate in ecr network eks platform gpu; do until [ "$$(gh api repos/Sttari/SteakLLM/actions/runs/$$RUN/pending_deployments --jq length)" = 1 ] || [ "$$(gh run view $$RUN --json status --jq .status)" = completed ]; do sleep 15; done; \
+	  gh api -X POST repos/Sttari/SteakLLM/actions/runs/$$RUN/pending_deployments -F 'environment_ids[]=$(ENV_ID)' -f state=approved -f comment="cluster-up: $$gate" >/dev/null 2>&1 && echo "$$gate approved"; sleep 45; done && \
 	until [ "$$(gh run view $$RUN --json status --jq .status)" = completed ]; do sleep 20; done && gh run view $$RUN --json conclusion --jq '"apply: " + .conclusion'
 	aws eks update-kubeconfig --name steakllm --region us-east-1
+	$(MAKE) bootstrap-argo
+
+# The API is private-only (8.9) and the tailnet router that reaches it runs inside the cluster — which a
+# fresh cluster does not have yet (Incident 34). So the bootstrap goes through a Session Manager tunnel
+# via the NAT instance (in the VPC, SSM-managed): local 6443 → the API's private address, with the TLS
+# name pinned to the endpoint's hostname. Needs the Session Manager plugin on the laptop.
+bootstrap-argo: ## the one hand step, through an SSM tunnel: helm install argocd + the root Application
+	$(eval NAT := $(shell aws ec2 describe-instances --filters Name=tag:Name,Values=steakllm-nat Name=instance-state-name,Values=running --query 'Reservations[0].Instances[0].InstanceId' --output text))
+	$(eval API := $(shell aws eks describe-cluster --name steakllm --query cluster.endpoint --output text | sed 's#https://##'))
+	@echo "tunnel: localhost:6443 → $(API):443 via $(NAT)"
+	@aws ssm start-session --target $(NAT) --document-name AWS-StartPortForwardingSessionToRemoteHost --parameters 'host=$(API),portNumber=443,localPortNumber=6443' >/tmp/steakllm-ssm-tunnel.log 2>&1 & echo $$! > /tmp/steakllm-ssm-tunnel.pid; sleep 6
+	@kubectl config set-cluster arn:aws:eks:us-east-1:066591056087:cluster/steakllm --server=https://localhost:6443 --tls-server-name=$(API) >/dev/null
+	kubectl get --raw /healthz
 	helm repo add argo https://argoproj.github.io/argo-helm >/dev/null 2>&1 || true
 	helm install argocd argo/argo-cd --version 10.7.0 --namespace argocd --create-namespace -f platform/argocd/values.yaml --wait --timeout 10m
 	kubectl apply -f platform/root.yaml
-	@echo "Argo is bootstrapped; watch: kubectl -n argocd get applications -w"
+	@echo "waiting for the Tailscale router to come up (then the tunnel can go)…"; n=0; until kubectl get connector steakllm-vpc -o jsonpath='{.status.conditions[?(@.type=="ConnectorReady")].status}' 2>/dev/null | grep -q True || [ $$n -ge 60 ]; do sleep 15; n=$$((n+1)); done
+	@kill $$(cat /tmp/steakllm-ssm-tunnel.pid) 2>/dev/null; rm -f /tmp/steakllm-ssm-tunnel.pid
+	aws eks update-kubeconfig --name steakllm --region us-east-1
+	@echo "Argo is bootstrapped; the tailnet carries kubectl from here: kubectl -n argocd get applications -w"
 
 cluster-down: ## take the workloads down through Argo, remove their volumes, then tear eks down (teardown.yml, one gate); the network stays
 	@echo "1/4 Removing Ingresses and LoadBalancer Services (an ALB outlives the cluster and keeps billing)…"
