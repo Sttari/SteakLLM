@@ -428,6 +428,10 @@ Run 1's clock survived a spot reclaim of the CPU node (Karpenter itself restarte
 
 Prometheus scrapes Kafka every 30 s and KEDA polls every 15 s, so the signal costs under a minute; the rest is 9.5's summon. The idle chain is three patiences in series (rate window 5 m, KEDA cooldown 15 m, Karpenter consolidateAfter 15 m) plus the drain.
 
+**Step 9.7 — the reaper drill** (Sep 4 2026)
+
+one chat (Bedrock) → KEDA ACTIVE 29 s → node Ready 68 s (i-096df6775b94c7e7d); `make gpu-check` with the node present: REFUSING, exit 1; KEDA paused at 0 → replicas 0 and the pod gone at 70 s (the empty node); `aws lambda invoke` at 75 s returned `{"nodepool": "gpu", "instances": ["i-096df6775b94c7e7d"], "count": 1}` in 3.6 s; EC2 shutting-down at 80 s; Karpenter deleted the NodeClaim and the node at 341 s (22:00:36Z), the instance terminated at 342 s; vLLM pods after: 0, replicas 0, no NodeClaim; `make gpu-check` passed at 343 s.
+
 ## 5. Lessons (running list)
 
 - Homebrew core is open-source-only; vendor taps exist for a reason.
@@ -467,6 +471,9 @@ Prometheus scrapes Kafka every 30 s and KEDA polls every 15 s, so the signal cos
 
 - **Idle timers add up in series.** "Fifteen idle minutes" was true of each controller and false of the system: window + cooldown + consolidateAfter ≈ 35 min before the instance goes. Decide which one owns the number (9.7/9.8 revisit: cooldown 300 or consolidateAfter 5 m).
 - **The demand signal is the event log, not the router.** KEDA reads Kafka's `chats` counter through Prometheus; the gateway's in-memory demand counter never left the process. Facts in the log are what other components can act on (ADR-0006's principle, proven).
+
+- **Once a controller owns a field, hand edits are noise.** KEDA reverts a hand `scale` within a poll; the summon drill's shortcut died the day KEDA arrived. The controller's own pause (`autoscaling.keda.sh/paused-replicas`) is the hand-brake — and `cluster-down` uses it.
+- **The last net must not depend on the thing it catches.** The reaper knows only EC2 tags: it works with Karpenter dead, the cluster gone, or the account otherwise quiet. Karpenter, alive, just tidies the NodeClaim afterwards.
 
 ## 6. Small stumbles (tooling and habits — not incidents, still time)
 
@@ -511,3 +518,4 @@ Everything that went sideways for a minute or more, whether or not it earned an 
 - **The drill script watched a pod by name** and lost it when the Deployment rolled; watch the Deployment's ready count instead. (Sep 4)
 - **Second spot reclaim of the day (19:53)** replaced the CPU node m6g → m7g mid-drill; Kafka, Prometheus, the gateway, KEDA and the router all moved within four minutes, the drill's chat hung through it (no connect timeout), and the counter reset made the chat invisible (Incident 42). Two reclaims in one afternoon is the price of the spot CPU node; 9.8 measures it. (Sep 4)
 - **`stamp` inside `$(…)`** — a function that prints progress and returns a value through stdout loses the progress lines to the capture; print progress to stderr. (Sep 4)
+- **`make help` never listed hyphenated targets** (`^[a-z]+:`); cluster-up/down and the new gpu-* were invisible. Pattern widened (PR #83). (Sep 4)
