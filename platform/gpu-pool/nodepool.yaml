@@ -1,6 +1,9 @@
-# The rule: at most one g6.xlarge (limits.cpu 4 = one machine's vCPUs; nvidia.com/gpu 1 says it twice),
-# on-demand first (9.1: the spot placement score for g6.xlarge was 1/10; this week spot is within 20% of
-# on-demand anyway), amd64. Tainted so only pods that ask for a GPU land on it; labelled so they can ask.
+# The rule: at most one GPU machine (limits nvidia.com/gpu 1; cpu 8 admits the 2xlarge), from a menu of
+# one-GPU, 24 GB types, cheapest first — g6.xlarge (L4, $0.80/h), g6.2xlarge (same L4, $0.98), g5.xlarge
+# (A10G, $1.01): the summon drill waited ten minutes for g6.xlarge capacity (Incident 41; Incident 27 was
+# the same lesson for the CPU node). On-demand (9.1: the spot placement score for g6.xlarge was 1/10; this
+# week spot is within 20% of on-demand anyway), amd64. Tainted so only pods that ask for a GPU land on it;
+# labelled so they can ask.
 # Removed after fifteen empty minutes; replaced after 24 h no matter what (the second safety net; the
 # nightly reaper is the third).
 apiVersion: karpenter.sh/v1
@@ -18,14 +21,14 @@ spec:
         kind: EC2NodeClass
         name: gpu
       requirements:
-        - { key: node.kubernetes.io/instance-type, operator: In, values: [g6.xlarge] }
+        - { key: node.kubernetes.io/instance-type, operator: In, values: [g6.xlarge, g6.2xlarge, g5.xlarge] }
         - { key: karpenter.sh/capacity-type, operator: In, values: [on-demand] }
         - { key: kubernetes.io/arch, operator: In, values: [amd64] }
       taints:
         - { key: nvidia.com/gpu, value: present, effect: NoSchedule }
       expireAfter: 24h
   limits:
-    cpu: "4"
+    cpu: "8"
     nvidia.com/gpu: "1"
   disruption:
     consolidationPolicy: WhenEmpty
