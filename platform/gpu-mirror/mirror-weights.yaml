@@ -59,7 +59,7 @@ spec:
               except ClientError as e:
                   if e.response["Error"]["Code"] not in ("404", "NoSuchKey", "NotFound"):
                       raise
-              path = snapshot_download(os.environ["MODEL"], local_dir="/work/model",
+              path = snapshot_download(os.environ["MODEL"], local_dir="/work/model", max_workers=2,
                                        allow_patterns=["*.safetensors", "*.json", "*.txt", "merges.txt", "vocab.json"])
               total = sum(os.path.getsize(os.path.join(d, f)) for d, _, fs in os.walk(path) for f in fs)
               print(f"downloaded {total/1e9:.1f} GB to {path}")
@@ -68,8 +68,8 @@ spec:
             - { name: work, mountPath: /work }
             - { name: tmp, mountPath: /tmp }
           resources:
-            requests: { cpu: 500m, memory: 1Gi }
-            limits: { cpu: "2", memory: 2Gi }
+            requests: { cpu: 500m, memory: 2Gi }
+            limits: { cpu: "2", memory: 6Gi } # four 4 GB shards in flight OOM-killed at 2Gi (Incident 35c); the node has 16 GiB
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true # pip writes under /work (PIP target, HOME) and /tmp
