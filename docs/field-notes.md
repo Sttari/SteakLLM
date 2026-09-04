@@ -301,6 +301,12 @@ A Job is immutable and carries a generated `spec.selector`; a PUT with the new m
 *Fix:* drop s5cmd; the one python container downloads and then uploads with boto3's multipart transfer (64 MiB parts, 8 in flight) and prints the object count and size it finds afterwards (PR #69). 15.2 GB uploaded in about two minutes over the S3 gateway endpoint.
 *Lesson:* Pod Identity's tell is that exact "only loopback hosts" line; any tool that prints it needs a newer SDK or a different tool. Prove credentials with the SDK you will ship, not a neighbour.
 
+**Incident 36 — Karpenter 1.14 asked for two read actions the 9.2 policy did not grant** (Sep 4 2026, Step 9.4)
+*Symptom:* the controller log looped on `iam:ListInstanceProfiles … AccessDenied` (its instance-profile garbage collector, every reconcile) and printed once `ec2:DescribeInstanceStatus permission is not allowed, update the IAM policy and restart the Karpenter deployment` (the interruption controller's instance-health checks, which it then disables).
+*Cause:* the tag-scoped policy in `infra/gpu` was written from the 1.x reference policy's shape; 1.14 added the profile collector and the health checks, both read-only.
+*Fix:* PR #72 adds `ec2:DescribeInstanceStatus` to the regional read list and `iam:ListInstanceProfiles` in its own statement (it accepts no narrower resource); then a `rollout restart` of the controller so the health-check feature re-evaluates. No write action widened.
+*Lesson:* read a new controller's first five minutes of log before calling it healthy; "Synced/Healthy" is Argo's view of the pods, not of the permissions. A 403 that names the API is the cheapest bug there is.
+
 **Open item — ECR scan-on-push did not scan the multi-arch images** (Sep 2 2026, Step 6.12)
 The five repositories have `scan_on_push = true` and the registry is in `BASIC` scanning mode, yet after the first release every image — the `sha-3432f6a` index and its two platform children — shows scan status `None`. Basic scanning does not scan an image index, and the children pushed as part of one did not trigger a scan either. Trivy in `release.yml` is the gate that actually ran (0 fixable CRITICALs per image), so nothing shipped unscanned. Candidates: a post-push step in `release.yml` that calls `ecr:StartImageScan` on each child digest and waits for the verdict (the release role would need that one action; bootstrap apply), or enhanced scanning (Inspector, paid) at Step 11. Decide before Step 8 pulls these images onto the node.
 
@@ -415,3 +421,6 @@ Everything that went sideways for a minute or more, whether or not it earned an 
 - **macOS has no `tac` and the system python has no `yaml`** — `tail -r`, and let pre-commit's check-yaml validate. (Sep 4)
 - **`gh pr merge --auto` is refused** — the repository has auto-merge off; wait for `gh pr checks` then merge. (Sep 4)
 - **A polling loop that matches the wrong column** — `kubectl get svc -A` prints ports as `3100/TCP`, not `:3100`; the empty namespace turned `kubectl -n  port-forward` into a plugin lookup. Check the row format before writing the grep. (Sep 4)
+- **"no subnets found" from Karpenter's pricing, metrics and disruption controllers for about two minutes** after the EC2NodeClass was created, while its status already listed two subnets. It is the window before the controllers' cache sees the status; it stops by itself. The source (`instancetype.List` → `nodeClass.ZoneInfo()` → `status.subnets`) says so; no fix. (Sep 4)
+- **CI `terraform validate` failed on a provider download** (`releases.hashicorp.com … connection reset by peer`): not ours; `gh run rerun <id> --failed`. (Sep 4)
+- **A python f-string with an escaped quote inside the braces** is a SyntaxError; build the string outside. (Sep 4)
