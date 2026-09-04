@@ -20,5 +20,6 @@ Nothing reaches the cluster except through git. Argo CD watches `platform/apps/`
 | `gateway` | 4 | `charts/gateway` (this repo) | image `sha-3432f6a` | inline `image.tag` | Kafka, Qdrant, Ollama; Pod Identity `steakllm/gateway`; `gateway-keys` |
 | `network-policies` | 5 | `platform/network-policies` | — | — | NetworkPolicy enforcement on in the VPC CNI (infra/eks) |
 | `tailscale` (8.9) | 2 | `tailscale-operator` | 1.102.3 | `platform/tailscale/values.yaml` | the `steakllm/tailscale` slot filled with the OAuth client |
+| `gpu-mirror` (9.3) | 4 | `platform/gpu-mirror` | crane:debug (by digest), python 3.12 | — | Pod Identity `steakllm/mirror`; two guarded Jobs (weights → bucket, image → ECR) |
 | `karpenter` (9.4) | 3 | `karpenter` (OCI, public.ecr.aws) | 1.14.1 | `platform/karpenter/values.yaml` | Pod Identity `karpenter/karpenter`, queue `steakllm-karpenter` (infra/gpu); one replica on the CPU node |
 | `gpu-pool` (9.4) | 5 | `platform/gpu-pool` | AMI `al2023@v20260827`, plugin v0.20.0 | — | EC2NodeClass `gpu`, NodePool `gpu` (one g6.xlarge on-demand, WhenEmpty 15m, expireAfter 24h), NVIDIA device plugin in kube-system |
