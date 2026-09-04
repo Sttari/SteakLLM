@@ -265,6 +265,15 @@ Quotas: Running On-Demand G and VT instances 8 vCPUs, All G and VT Spot Instance
 *Fix:* the Tailscale apps are kept alive until the teardown; the waits are bounded; the teardown was dispatched by hand (it needs only the AWS API); the two orphaned volumes (qdrant 10 GB, prometheus 20 GB) are for Thomas to remove (PR #55).
 *Lesson:* under a private endpoint, list what carries your own access before you take things down, and take it down last.
 
+**Incident 34 — the Argo bootstrap could not reach a freshly rebuilt cluster: its API is private-only and the only path from the laptop runs inside the cluster** (Sep 4 2026, Step 9.2)
+*Symptom:* after the first rebuild since 8.9, `helm install argocd …` failed with `kubernetes cluster unreachable`; `kubectl` timed out; no cluster device on the tailnet.
+*Cause:* 8.9 made the API private-only and moved the laptop's access to a Tailscale subnet router — which is a pod Argo deploys. A fresh cluster has no Argo, so no router, so no path for the command that installs Argo. The interim `/32` that used to cover this had been retired the same day.
+*Fix:* the bootstrap goes through a Session Manager port-forward via the NAT instance (already SSM-managed and inside the VPC): local 6443 → the API's private address, TLS name pinned to the endpoint's hostname; `make bootstrap-argo` opens it, installs Argo, applies the root Application, waits for the Connector to be Ready, closes the tunnel and restores the kubeconfig (PR #60). The Session Manager plugin must be on the laptop.
+*Lesson:* every "private-only" decision needs a written answer to "and on day zero?" — the path that existed before the private one must not be the thing the private path is built on.
+
+**Incident 34a — the reaper's reserved concurrency was refused** (Sep 4 2026, Step 9.2)
+`PutFunctionConcurrency` returned 400: this account's Lambda concurrency limit is too low to reserve any without breaching AWS's unreserved minimum. The apply stopped at 30 of 33 resources (the schedule target and permission were the missing ones). Removed the reservation with a checkov skip and a reason (PR #59); the second apply completed the three. *Lesson:* a checkov "best practice" can be an account-limit landmine; read the error's request id line, it names the API.
+
 **Open item — ECR scan-on-push did not scan the multi-arch images** (Sep 2 2026, Step 6.12)
 The five repositories have `scan_on_push = true` and the registry is in `BASIC` scanning mode, yet after the first release every image — the `sha-3432f6a` index and its two platform children — shows scan status `None`. Basic scanning does not scan an image index, and the children pushed as part of one did not trigger a scan either. Trivy in `release.yml` is the gate that actually ran (0 fixable CRITICALs per image), so nothing shipped unscanned. Candidates: a post-push step in `release.yml` that calls `ecr:StartImageScan` on each child digest and waits for the verdict (the release role would need that one action; bootstrap apply), or enhanced scanning (Inspector, paid) at Step 11. Decide before Step 8 pulls these images onto the node.
 
