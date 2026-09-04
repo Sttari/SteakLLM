@@ -21,7 +21,7 @@ spec:
     spec:
       serviceAccountName: mirror
       automountServiceAccountToken: false
-      restartPolicy: OnFailure
+      restartPolicy: Never # a pod restarted in place is deleted at the back-off limit, logs and scratch with it (Incident 35d); Never keeps the failed pod as evidence
       nodeSelector:
         steakllm.io/pool: cpu
       securityContext:
@@ -76,14 +76,14 @@ spec:
             capabilities: { drop: [ALL] }
       containers:
         - name: upload
-          image: peakcom/s5cmd:v2.3.0
+          image: peakcom/s5cmd:v2.3.0 # the binary is /s5cmd, not on PATH (Incident 35d)
           command:
             - sh
             - -c
             - |
               if [ -e /work/skip ]; then echo "guard: skipped"; exit 0; fi
-              s5cmd sync /work/model/ s3://steakllm-models-066591056087/qwen2.5-7b-instruct/
-              s5cmd ls s3://steakllm-models-066591056087/qwen2.5-7b-instruct/
+              /s5cmd sync /work/model/ s3://steakllm-models-066591056087/qwen2.5-7b-instruct/
+              /s5cmd ls s3://steakllm-models-066591056087/qwen2.5-7b-instruct/
           volumeMounts:
             - { name: work, mountPath: /work }
           resources:
