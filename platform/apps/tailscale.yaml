@@ -1,0 +1,29 @@
+# The Tailscale operator: the admin door (ADR-0010). Its OAuth client reaches it as the Secret
+# operator-oauth, synced from steakllm/tailscale by secret-stores. Wave 2.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tailscale
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  sources:
+    - repoURL: https://pkgs.tailscale.com/helmcharts
+      chart: tailscale-operator
+      targetRevision: 1.102.3
+      helm:
+        releaseName: tailscale-operator
+        valueFiles:
+          - $values/platform/tailscale/values.yaml
+    - repoURL: https://github.com/Sttari/SteakLLM.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tailscale
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
