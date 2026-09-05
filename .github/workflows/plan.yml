@@ -30,6 +30,7 @@ jobs:
       TF_VAR_github_repo_id: ${{ github.repository_id }}
       TF_VAR_budget_email: ${{ secrets.TF_VAR_BUDGET_EMAIL }}
       TF_VAR_admin_principal_arn: ${{ vars.TF_VAR_ADMIN_PRINCIPAL_ARN }}  # eks: the laptop's access entry
+      TF_VAR_notify_email: ${{ vars.TF_VAR_NOTIFY_EMAIL }}  # data: the SNS email subscriber (sensitive in Terraform, never in a plan)
     steps:
       - uses: actions/checkout@v5
 
