@@ -19,6 +19,10 @@ locals {
     gateway          = { namespace = "steakllm", policy = data.aws_iam_policy_document.gateway.json }
     embedder         = { namespace = "steakllm", policy = data.aws_iam_policy_document.embedder.json }
     notifier         = { namespace = "steakllm", policy = data.aws_iam_policy_document.notifier.json }
+    # The AWS Load Balancer Controller (10.3): the upstream reference policy for v3.5.0, verbatim (it creates
+    # and tags load balancers, target groups, listeners and security-group rules; the wildcards are AWS's,
+    # scoped by their own tag conditions). It builds the Kafka door's internal NLB now and Step 12's ALB later.
+    aws-load-balancer-controller = { namespace = "kube-system", policy = file("${path.module}/aws-load-balancer-controller-iam.json") }
   }
 }
 
@@ -101,6 +105,8 @@ resource "aws_iam_role" "tenant" {
 }
 
 resource "aws_iam_role_policy" "tenant" {
+  #checkov:skip=CKV_AWS_355:the LB controller's upstream policy uses "*" resources under aws:RequestTag/aws:ResourceTag conditions
+  #checkov:skip=CKV_AWS_290:same — write actions on "*" are the upstream reference policy, tag-conditioned
   for_each = local.tenants
   name     = "least-privilege"
   role     = aws_iam_role.tenant[each.key].id

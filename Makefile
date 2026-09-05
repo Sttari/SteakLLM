@@ -59,7 +59,7 @@ ENV_ID := 21032992457
 
 cluster-up: ## rebuild the cluster (apply.yml, five gates) and bootstrap Argo CD through an SSM tunnel; ~25 min
 	@gh workflow run apply.yml && sleep 30 && RUN=$$(gh run list --workflow apply --branch main --limit 1 --json databaseId --jq '.[0].databaseId') && echo "apply run $$RUN" && \
-	for gate in ecr data network eks platform gpu; do until [ "$$(gh api repos/Sttari/SteakLLM/actions/runs/$$RUN/pending_deployments --jq length)" = 1 ] || [ "$$(gh run view $$RUN --json status --jq .status)" = completed ]; do sleep 15; done; \
+	for gate in ecr data network pipeline eks platform gpu; do until [ "$$(gh api repos/Sttari/SteakLLM/actions/runs/$$RUN/pending_deployments --jq length)" = 1 ] || [ "$$(gh run view $$RUN --json status --jq .status)" = completed ]; do sleep 15; done; \
 	  gh api -X POST repos/Sttari/SteakLLM/actions/runs/$$RUN/pending_deployments -F 'environment_ids[]=$(ENV_ID)' -f state=approved -f comment="cluster-up: $$gate" >/dev/null 2>&1 && echo "$$gate approved"; sleep 45; done && \
 	until [ "$$(gh run view $$RUN --json status --jq .status)" = completed ]; do sleep 20; done && gh run view $$RUN --json conclusion --jq '"apply: " + .conclusion'
 	aws eks update-kubeconfig --name steakllm --region us-east-1
@@ -104,10 +104,10 @@ gpu-down: ## empty the GPU pool through KEDA and Karpenter (pause at 0, scale 0,
 
 cluster-down: ## take the workloads down through Argo, remove their volumes, then tear eks down (teardown.yml, one gate); the network stays
 	$(MAKE) gpu-down
-	@echo "1/4 Removing Ingresses and LoadBalancer Services (an ALB outlives the cluster and keeps billing)…"
+	@echo "1/4 Removing Ingresses and LoadBalancer Services not owned by an operator (an ALB outlives the cluster and keeps billing)…"
 	-kubectl get ingress -A --no-headers 2>/dev/null | awk '{print "-n "$$1" "$$2}' | xargs -r -L1 kubectl delete ingress
-	-kubectl get svc -A --field-selector spec.type=LoadBalancer --no-headers 2>/dev/null | awk '{print "-n "$$1" "$$2}' | xargs -r -L1 kubectl delete svc
-	@until [ "$$(aws elbv2 describe-load-balancers --query 'length(LoadBalancers)' --output text)" = 0 ]; do echo "waiting for load balancers to go…"; sleep 15; done
+	@# Strimzi owns the Kafka door's Services (10.3) and would recreate them here; they go with the kafka Application in 2/4.
+	-kubectl get svc -A --field-selector spec.type=LoadBalancer -o json 2>/dev/null | python3 -c 'import sys,json; [print("-n", i["metadata"]["namespace"], i["metadata"]["name"]) for i in json.load(sys.stdin)["items"] if not i["metadata"].get("labels",{}).get("strimzi.io/cluster")]' | xargs -r -L1 kubectl delete svc
 	@echo "2/4 Taking the workloads down through Argo (cascade), so their claims can be released…"
 	@# Every workload Application gets the cascade finalizer, then is removed. Kept alive: argocd (must outlive its
 	@# children), root (removed last, without cascade), namespaces (would take everything with them), storage,
@@ -118,6 +118,8 @@ cluster-down: ## take the workloads down through Argo, remove their volumes, the
 	-kubectl -n argocd patch application root --type merge -p '{"metadata":{"finalizers":null}}' >/dev/null
 	-kubectl -n argocd delete application root --wait=false
 	@n=0; until [ "$$(kubectl get pods -A --request-timeout=10s --no-headers 2>/dev/null | grep -vE '^(kube-system|argocd|tailscale|external-secrets) ' | wc -l | tr -d ' ')" = 0 ] || [ $$n -ge 40 ]; do echo "waiting for workload pods to go…"; sleep 15; n=$$((n+1)); done
+	@n=0; until [ "$$(aws elbv2 describe-load-balancers --query 'length(LoadBalancers)' --output text)" = 0 ] || [ $$n -ge 40 ]; do echo "waiting for load balancers to go (the Kafka door's NLBs leave with the kafka Application)…"; sleep 15; n=$$((n+1)); done
+	@if [ "$$(aws elbv2 describe-load-balancers --query 'length(LoadBalancers)' --output text)" != 0 ]; then echo "REFUSING: load balancers still exist; they would outlive the cluster and bill"; exit 1; fi
 	@echo "3/4 Deleting every PersistentVolumeClaim so the EBS driver removes the volumes (a torn-down cluster cannot)…"
 	-kubectl delete pvc --all --all-namespaces --wait=true --timeout=5m
 	@n=0; until [ "$$(aws ec2 describe-volumes --filters Name=tag-key,Values=kubernetes.io/created-for/pvc/name --query 'length(Volumes)' --output text)" = 0 ] || [ $$n -ge 20 ]; do echo "waiting for PVC volumes to go…"; sleep 15; n=$$((n+1)); done

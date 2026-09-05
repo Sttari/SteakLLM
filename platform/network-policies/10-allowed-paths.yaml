@@ -77,6 +77,8 @@ spec:
       ports: [{ protocol: TCP, port: 9092 }, { protocol: TCP, port: 9090 }, { protocol: TCP, port: 9091 }, { protocol: TCP, port: 8443 }]
     - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: monitoring } } }]
       ports: [{ protocol: TCP, port: 9404 }]
+    - from: [{ ipBlock: { cidr: 10.42.192.0/18 } }, { ipBlock: { cidr: 10.42.128.0/18 } } ] # the Kafka door (10.3): the NLB forwards with the Lambda's private address
+      ports: [{ protocol: TCP, port: 9094 }]
 ---
 # Kafka namespace egress: within the namespace (operator ↔ broker ↔ entity operator) and the Kubernetes API
 # (the operator watches resources).
