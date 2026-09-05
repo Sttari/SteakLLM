@@ -6,6 +6,7 @@ Every module has its own state key in the shared bucket and is applied by the pi
 |---|---|---|---|---|---|
 | `bootstrap` | `bootstrap/terraform.tfstate` | the laptop, by hand (ADR-0003) | — | state bucket, GitHub OIDC provider, the plan / apply / release roles, budgets | $0 |
 | `ecr` | `ecr/terraform.tfstate` | `apply.yml` | bootstrap | five image repositories, immutable tags, lifecycle rules | ≈ $0.15 |
+| `data` | `data/terraform.tfstate` | `apply.yml` | bootstrap | documents bucket (TLS-only, EventBridge on, quarantine lifecycle), DynamoDB catalog (PITR, deletion protection), SNS topic + email subscriber (ADR-0012) | pennies (pay-per-use) |
 | `network` | `network/terraform.tfstate` | `apply.yml` | bootstrap | VPC, subnets, IGW, NAT instance + EIP, S3 and DynamoDB endpoints (ADR-0007) | ≈ $7 |
 | `eks` | `eks/terraform.tfstate` | `apply.yml` | network (remote state) | the cluster, one spot t4g.xlarge node, six add-ons, access entries (ADR-0008/0009) | ≈ $4.60/day while up |
 | `platform` | `platform/terraform.tfstate` | `apply.yml`, after eks | eks (by name, not state) | Secrets Manager slots, Pod Identity roles and associations per tenant | ≈ $1.60 |

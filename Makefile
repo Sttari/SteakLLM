@@ -59,7 +59,7 @@ ENV_ID := 21032992457
 
 cluster-up: ## rebuild the cluster (apply.yml, five gates) and bootstrap Argo CD through an SSM tunnel; ~25 min
 	@gh workflow run apply.yml && sleep 30 && RUN=$$(gh run list --workflow apply --branch main --limit 1 --json databaseId --jq '.[0].databaseId') && echo "apply run $$RUN" && \
-	for gate in ecr network eks platform gpu; do until [ "$$(gh api repos/Sttari/SteakLLM/actions/runs/$$RUN/pending_deployments --jq length)" = 1 ] || [ "$$(gh run view $$RUN --json status --jq .status)" = completed ]; do sleep 15; done; \
+	for gate in ecr data network eks platform gpu; do until [ "$$(gh api repos/Sttari/SteakLLM/actions/runs/$$RUN/pending_deployments --jq length)" = 1 ] || [ "$$(gh run view $$RUN --json status --jq .status)" = completed ]; do sleep 15; done; \
 	  gh api -X POST repos/Sttari/SteakLLM/actions/runs/$$RUN/pending_deployments -F 'environment_ids[]=$(ENV_ID)' -f state=approved -f comment="cluster-up: $$gate" >/dev/null 2>&1 && echo "$$gate approved"; sleep 45; done && \
 	until [ "$$(gh run view $$RUN --json status --jq .status)" = completed ]; do sleep 20; done && gh run view $$RUN --json conclusion --jq '"apply: " + .conclusion'
 	aws eks update-kubeconfig --name steakllm --region us-east-1
