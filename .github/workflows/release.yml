@@ -95,6 +95,19 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.service }}   # the amd64 half was just built; only arm64 is new work
           provenance: false     # otherwise ECR lists an attestation manifest as an "unknown/unknown" image beside ours
 
+      - name: Build the Lambda flavour (ingest only) and push as lambda-<tag>
+        if: matrix.service == 'ingest' && steps.check.outputs.exists == 'false'
+        uses: docker/build-push-action@v6
+        with:
+          context: services
+          file: services/ingest/Dockerfile
+          target: lambda
+          platforms: linux/arm64   # Lambda wants one architecture per image, and the function is arm64
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/${{ env.REPO }}:lambda-${{ steps.check.outputs.tag }}
+          cache-from: type=gha,scope=ingest
+          provenance: false
+
       - name: Record
         run: |
           {

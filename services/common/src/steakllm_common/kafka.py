@@ -14,6 +14,7 @@ The loop takes its consumer and producer as objects (kafka-python's, or fakes in
 from __future__ import annotations
 
 import json
+import os
 import signal
 import sys
 import time
@@ -55,10 +56,31 @@ class Record(Protocol):  # the subset of kafka-python's ConsumerRecord the loop 
     headers: list[tuple[str, bytes]]
 
 
+def tls_kwargs(s: Settings) -> dict:
+    """kafka-python arguments for the chosen security protocol. Fetches the CA if it lives in
+    Secrets Manager (written once to /tmp, reused across warm Lambda invocations)."""
+    if s.kafka_security_protocol.upper() != "SSL":
+        return {}
+    cafile = s.kafka_ssl_cafile
+    if not cafile and s.kafka_ca_secret_id:
+        cafile = "/tmp/kafka-ca.pem"
+        if not os.path.exists(cafile):
+            import boto3
+
+            pem = boto3.client("secretsmanager", region_name=s.aws_region).get_secret_value(
+                SecretId=s.kafka_ca_secret_id
+            )["SecretString"]
+            with open(cafile, "w") as f:
+                f.write(pem)
+    return {"security_protocol": "SSL", "ssl_cafile": cafile, "ssl_check_hostname": True}
+
+
 def make_producer(s: Settings):
     from kafka import KafkaProducer
 
-    return KafkaProducer(bootstrap_servers=s.kafka_bootstrap, acks="all", linger_ms=5)
+    return KafkaProducer(
+        bootstrap_servers=s.kafka_bootstrap, acks="all", linger_ms=5, **tls_kwargs(s)
+    )
 
 
 def make_consumer(s: Settings, group: str, topics: list[str]):
@@ -66,6 +88,7 @@ def make_consumer(s: Settings, group: str, topics: list[str]):
 
     c = KafkaConsumer(
         bootstrap_servers=s.kafka_bootstrap,
+        **tls_kwargs(s),
         group_id=group,
         enable_auto_commit=False,  # the loop commits what it handled, never before
         auto_offset_reset="earliest",
