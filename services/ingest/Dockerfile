@@ -13,6 +13,22 @@ COPY ingest/src ingest/src
 # --no-editable: path dependencies are installed as real packages into the venv, not links to /app
 RUN cd ingest && uv sync --frozen --no-dev --no-editable
 
+# --- the Lambda flavour (Step 10.4): the same venv plus the Lambda runtime interface client; a single-arch
+# image (Lambda accepts no multi-arch manifest), pushed as steakllm/ingest:lambda-sha-<7> by release.yml.
+# `docker build --target lambda -f services/ingest/Dockerfile services/`
+FROM build AS build-lambda
+RUN cd ingest && uv pip install --python .venv/bin/python awslambdaric
+
+FROM python:3.12-slim-bookworm AS lambda
+RUN useradd --uid 10001 --create-home app
+WORKDIR /app/ingest
+COPY --from=build-lambda --chown=app:app /app/ingest/.venv /app/ingest/.venv
+ENV PATH="/app/ingest/.venv/bin:$PATH" PYTHONUNBUFFERED=1 HOME=/tmp
+USER app
+ENTRYPOINT ["python", "-m", "awslambdaric"]
+CMD ["steakllm_ingest.main.lambda_handler"]
+
+# --- the service flavour (default target): the local runner / watcher
 FROM python:3.12-slim-bookworm
 RUN useradd --uid 10001 --create-home app
 WORKDIR /app/ingest

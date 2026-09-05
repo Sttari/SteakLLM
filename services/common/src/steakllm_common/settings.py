@@ -40,6 +40,13 @@ class Settings(BaseSettings):
 
     # Kafka
     kafka_bootstrap: str = "localhost:9092"
+    # TLS to the broker: PLAINTEXT inside the cluster (NetworkPolicies are the wall), SSL through
+    # the Kafka door (10.3), verifying the broker against Strimzi's cluster CA. The CA arrives as a
+    # file (kafka_ssl_cafile) or a Secrets Manager secret id fetched at start (kafka_ca_secret_id,
+    # the Lambda's way: no volume, only /tmp).
+    kafka_security_protocol: str = "PLAINTEXT"  # "PLAINTEXT" | "SSL"
+    kafka_ssl_cafile: str | None = None
+    kafka_ca_secret_id: str | None = None
     topic_documents: str = "documents"
     topic_documents_retry: str = "documents.retry"
     topic_documents_dlq: str = "documents.dlq"
