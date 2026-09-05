@@ -1,0 +1,19 @@
+# One replica on the CPU node (the chart's two would leave one Pending). The VPC is named because the
+# pod may not reach the node's metadata (IMDS hop limit). Target type ip: NLBs and ALBs address pods
+# directly through the VPC CNI. The Service mutator webhook stays off: nothing else in the cluster should
+# become a load balancer by accident (the public surface is one ALB, Step 12).
+clusterName: steakllm
+region: us-east-1
+vpcId: vpc-08daa1558a7d69a3f
+replicaCount: 1
+serviceAccount:
+  create: true
+  name: aws-load-balancer-controller # Pod Identity association in infra/platform; no annotation needed
+nodeSelector:
+  steakllm.io/pool: cpu
+defaultTargetType: ip
+enableServiceMutatorWebhook: false
+createIngressClassResource: true # the alb IngressClass for Step 12
+resources:
+  requests: { cpu: 100m, memory: 128Mi }
+  limits: { cpu: 500m, memory: 512Mi }

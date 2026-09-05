@@ -11,7 +11,7 @@ on:
         description: "Module to remove (eks first, then network; never bootstrap)"
         type: choice
         required: true
-        options: [eks, network, data]
+        options: [eks, network, data, pipeline]
       confirm:
         description: "Type the module name again to confirm what is lost"
         type: string

@@ -1,0 +1,33 @@
+# The AWS Load Balancer Controller (ADR-0012): turns Services of type LoadBalancer into NLBs and, in Step 12,
+# Ingresses into the one public ALB. Today it builds the Kafka door — an internal NLB, security-grouped to
+# the ingest Lambda. Pod Identity kube-system/aws-load-balancer-controller (infra/platform). Wave 2: before
+# the Kafka listener that needs it.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aws-load-balancer-controller
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  sources:
+    - repoURL: https://aws.github.io/eks-charts
+      chart: aws-load-balancer-controller
+      targetRevision: 3.5.0
+      helm:
+        releaseName: aws-load-balancer-controller
+        valueFiles:
+          - $values/platform/aws-load-balancer-controller/values.yaml
+    - repoURL: https://github.com/Sttari/SteakLLM.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true # its CRDs (TargetGroupBinding, IngressClassParams) are large

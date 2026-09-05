@@ -7,7 +7,7 @@ metadata:
   name: network-policies
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "5"
+    argocd.argoproj.io/sync-wave: "-1" # right after the rooms (-2), before anything moves in: on a rebuild the walls were the last thing up because a wave-4 Job was slow (Incident 43)
 spec:
   project: default
   source:
