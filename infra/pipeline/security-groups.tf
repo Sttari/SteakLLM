@@ -4,6 +4,7 @@
 # gateway endpoints (their prefix lists) — nothing else, so the Lambda needs no NAT and no internet.
 
 resource "aws_security_group" "ingest_lambda" {
+  #checkov:skip=CKV2_AWS_5:attached to the ingest Lambda in 10.4 (same module, next substep)
   name        = "${var.project}-ingest-lambda"
   description = "The ingest Lambda's ENIs: Kafka door, S3 and DynamoDB endpoints only"
   vpc_id      = data.terraform_remote_state.network.outputs.vpc_id
@@ -11,6 +12,7 @@ resource "aws_security_group" "ingest_lambda" {
 }
 
 resource "aws_security_group" "kafka_door" {
+  #checkov:skip=CKV2_AWS_5:attached by the AWS Load Balancer Controller to the NLB it builds from the Strimzi listener's annotation (by name)
   name        = "${var.project}-kafka-door"
   description = "The internal NLB in front of Strimzi's lambda listener: the ingest Lambda only"
   vpc_id      = data.terraform_remote_state.network.outputs.vpc_id
