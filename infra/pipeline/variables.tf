@@ -13,3 +13,9 @@ variable "kafka_door_port" {
   type        = number
   default     = 9094
 }
+
+variable "quarantine_prefix" {
+  description = "Where the gateway's presigned uploads land (infra/data's lifecycle rule expires it); the doorbell rule and the Lambda's S3 permissions are scoped to it."
+  type        = string
+  default     = "quarantine/"
+}
