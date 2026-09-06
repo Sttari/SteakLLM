@@ -504,6 +504,14 @@ Reading it: Bedrock's Nova Micro is the low-latency floor at concurrency 1; vLLM
 | 06 the broker dies mid-batch | PASS — the Kafka JVM killed with SIGKILL (pid 1 is tini and ignores signals from inside its namespace); the container restarted once; a memo uploaded during the outage was summarized 8 s later; both memos exactly once with one point each; nothing parked. The readiness stopwatch is coarse (the pod was Ready again within the script's first check). |
 | 07 the doorbell off during uploads | PASS — the Lambda's Kafka address pointed at a dead host (named); two uploads parked in the DLQ after 285 s (three 60 s attempts each), the alarm went to ALARM; address restored; `replay_dlq.py` (uv) invoked the Lambda with each parked event: the two memos ended `summarized` exactly once, and a stale duplicate replay produced nothing (the handler's already-recorded guard). The parked copies stay until a human purges the queue. |
 
+**Step 10.7 — drills 08–10** (Sep 6 2026)
+
+| Drill | Result |
+|---|---|
+| 08 rebuild Qdrant from the log | PASS — collection dropped (named), root's and the embedder's self-heal paused for the minute of the reset, the group's three partitions rewound to offset 0, re-embedded in 21 s: 17 points for the 17 live documents (points before the drop: 0, after two earlier attempts had left the collection empty). |
+| 09 the delete path | PASS — upload → summarized in 15 s with 1 point; DELETE through the gateway 204; the catalog row gone at once, the points 0 within 6 s; the second DELETE 404; the log holds exactly one DocumentUploaded, DocumentIndexed, SummaryReady and DocumentDeleted; the docs model answers that no excerpt mentions the memo (the file name appears in no citation). |
+| 10 restore the catalog from PITR | PASS — a row corrupted on purpose (named), restore-table-to-point-in-time to a minute before into steakllm-catalog-restored: ACTIVE after 210 s, the restored row read `summarized` where the live one read `corrupted`, 16 rows on both sides, the live row repaired from the copy. The restored table stays until a human removes it. |
+
 ## 5. Lessons (running list)
 
 - Homebrew core is open-source-only; vendor taps exist for a reason.
@@ -603,3 +611,4 @@ Everything that went sideways for a minute or more, whether or not it earned an 
 - **Lambda container images are single-architecture**: the multi-arch manifest the release pushes for the services is refused; the `lambda` target is built for arm64 only under its own tag. (Sep 5)
 - **`terraform validate` locally must be read in full**: `validate | head -n 1` printed an empty line and I shipped an undeclared variable; CI caught it. (Sep 5)
 - **`cluster-down` needs a working kubectl path before it starts.** With the tailnet route unapproved, its first `kubectl` hung silently in `gpu-down`; the run was stopped by hand before the teardown step. Fail fast on `kubectl get nodes` (next session), and point the kubeconfig at the SSM tunnel when the route is not approved. (Sep 6)
+- **10.8 hand-over decided (Sep 6):** Kafka in-cluster TLS, the Qdrant API key, the gateway's mode→model mapping and the platform-room walls all go to Step 11 with a sentence each in PLAN 10.8; ECR scan-on-push to Step 12. None was cheap enough to fold into a drill day, and each has a step where its safety net exists.

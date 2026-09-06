@@ -15,5 +15,5 @@ n=0; until [ "$(points "$D")" = "0" ] || [ $n -ge 120 ]; do sleep 5; n=$((n+5));
 stamp "points after $n s: $(points "$D")"
 curl -s -o /dev/null -w '  second delete: HTTP %{http_code}\n' -X DELETE "$GW/v1/documents/$D" -H "authorization: Bearer $KEY"
 stamp "events: $(events "$D")"
-stamp "docs question mentions the memo? $(curl -s --max-time 60 "$GW/v1/chat/completions" -H "authorization: Bearer $KEY" -H 'content-type: application/json' -d '{"model":"docs","messages":[{"role":"user","content":"Where is the hub for del1?"}],"max_tokens":60}' | python3 -c 'import sys,json; d=json.load(sys.stdin); print(("del1" in json.dumps(d).lower()) and "yes (fail)" or "no (pass)")')"
+stamp "docs question mentions the memo? $(curl -s --max-time 60 "$GW/v1/chat/completions" -H "authorization: Bearer $KEY" -H 'content-type: application/json' -d '{"model":"docs","messages":[{"role":"user","content":"Where is the hub for del1?"}],"max_tokens":60}' | python3 -c 'import sys,json; d=json.load(sys.stdin); print(("drill-del1" in json.dumps(d).lower()) and "yes (fail)" or "no (pass): " + (d.get("choices") or [{}])[0].get("message",{}).get("content","")[:90])')"
 echo "pass when the row is gone, points are 0, exactly one DocumentDeleted was produced, and the second delete is a no-op (404 or 204)."
