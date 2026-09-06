@@ -26,6 +26,9 @@ Nothing reaches the cluster except through git. Argo CD watches `platform/apps/`
 | `gpu-pool` (9.4) | 5 | `platform/gpu-pool` | AMI `al2023@v20260827`, plugin v0.20.0 | — | EC2NodeClass `gpu`, NodePool `gpu` (one of g6.xlarge / g6.2xlarge / g5.xlarge, on-demand, WhenEmpty 15m, expireAfter 24h), NVIDIA device plugin in kube-system |
 | `keda` (9.6) | 3 | `keda` (kedacore) | 2.20.2 | `platform/keda/values.yaml` | the ScaledObject on vLLM lives in `charts/vllm`; reads kube-prometheus-stack |
 | `vllm` (9.5) | 5 | `charts/vllm` (this repo) | image `v0.28.0` (ECR mirror) | `charts/vllm/values.yaml` | 0 replicas until KEDA says otherwise; Pod Identity `steakllm/vllm`; weights from the models bucket; ServiceMonitor |
+| `tempo` (11.3) | 3 | `tempo` (grafana) | 1.24.4 | `platform/tempo/values.yaml` | traces from the gateway and the workers (OTLP 4318), 72 h |
+| `monitoring-extras` (11.4–11.5) | 3 | `platform/monitoring/extras` | — | — | the PrometheusRule (eight alerts, a runbook each) and the usage & cost dashboard |
+| `eval` (11.6) | 5 | `platform/eval` | gateway image | — | the nightly eval CronJob (02:30 UTC); Pod Identity `steakllm/eval` |
 | `embedder` (10.5) | 4 | `charts/worker` (this repo) | image `sha-a50218b` | inline `valuesObject` | Pod Identity `steakllm/embedder`; Kafka, Qdrant, Ollama, S3, the catalog |
 | `summarizer` (10.5) | 4 | `charts/worker` (this repo) | image `sha-a50218b` | inline `valuesObject` | Pod Identity `steakllm/summarizer`; Kafka, the gateway's /v1 (key from `gateway-keys`), S3, the catalog |
 | `notifier` (10.5) | 4 | `charts/worker` (this repo) | image `sha-a50218b` | inline `valuesObject` | Pod Identity `steakllm/notifier`; Kafka, SNS, the catalog, the `steakllm-watchlist` table |

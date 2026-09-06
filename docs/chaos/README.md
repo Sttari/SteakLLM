@@ -10,3 +10,5 @@
 | 08-rebuild-qdrant | `08-rebuild-qdrant.md` | Step 10 | rebuild the index from the log |
 | 09-delete-path | `09-delete-path.md` | Step 10 | the delete path, end to end, idempotent |
 | 10-restore | `10-restore.md` | Step 10 | point-in-time restore of the catalog |
+| 11-prometheus-kill | `11-prometheus-kill.md` | Step 11 | Prometheus killed mid-scrape: data and triggers survive |
+| 12-alertmanager-kill | `12-alertmanager-kill.md` | Step 11 | Alertmanager killed while firing: no duplicate page |

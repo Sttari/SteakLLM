@@ -64,7 +64,7 @@ The complete table with the alternative rejected for each choice is in [`PLAN.md
 - [X]  **8.** Platform services by GitOps — monitoring, Kafka, Qdrant, secrets, the admin door (the public door waits for Step 12)
 - [X]  **9.** GPU pool — Karpenter, KEDA, vLLM summoned on demand
 - [X]  **10.** Cloud event pipeline and chaos drills — S3, EventBridge, Lambda, DynamoDB, SNS
-- [ ]  **11.** Bedrock fallback, tracing, alerts, SLOs, cost dashboard
+- [X]  **11.** Bedrock fallback, tracing, alerts, SLOs, cost dashboard
 - [ ]  **12.** Portfolio polish — demo mode, ADRs, walkthrough, public repo
 
 ## Cost
