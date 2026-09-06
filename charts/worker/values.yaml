@@ -12,7 +12,7 @@ replicaCount: 1
 config: {}         # non-secret settings, upper-cased steakllm_common.settings keys
 secretEnv: []      # [{ name: GATEWAY_API_KEY, secretName: gateway-keys, key: api_key }]
 resources:
-  requests: { cpu: 100m, memory: 256Mi }
+  requests: { cpu: 50m, memory: 256Mi } # consumers idle between batches; the CPU node's requests sit at 97% (Step 11 revisits the node size)
   limits: { cpu: "1", memory: 768Mi }
 nodeSelector:
   steakllm.io/pool: cpu
