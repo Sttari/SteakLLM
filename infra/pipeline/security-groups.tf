@@ -65,3 +65,16 @@ resource "aws_vpc_security_group_egress_rule" "door_to_vpc" {
   to_port           = var.kafka_door_port
   cidr_ipv4         = data.terraform_remote_state.network.outputs.vpc_cidr
 }
+
+# Secrets Manager has no gateway endpoint: the Lambda fetches the cluster CA over the NAT instance, so
+# the group needs HTTPS out to the world for that one call (an interface endpoint would be ≈ $7/month
+# for the same bytes; revisit if the pipeline ever needs more AWS APIs from inside the VPC). The first
+# doorbell test hung for the full 60 s on exactly this (Incident 44).
+resource "aws_vpc_security_group_egress_rule" "lambda_https_out" {
+  security_group_id = aws_security_group.ingest_lambda.id
+  description       = "Secrets Manager (the cluster CA) over the NAT"
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+  cidr_ipv4         = "0.0.0.0/0"
+}
