@@ -1,0 +1,40 @@
+# The notifier (Step 6.6 on the cluster): consumes documents, matches SummaryReady against the watch-list (the steakllm-watchlist table, read at start), publishes to SNS once per document. Pod Identity steakllm/notifier (SNS publish, catalog, watch-list scan). Wave 4, beside the gateway (Kafka, Qdrant and Ollama are up by then). The image tag is the
+# release's sha-<7>; bumping it is a pull request here.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: notifier
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Sttari/SteakLLM.git
+    targetRevision: main
+    path: charts/worker
+    helm:
+      releaseName: notifier
+      valuesObject:
+        name: notifier
+        image:
+          repository: 066591056087.dkr.ecr.us-east-1.amazonaws.com/steakllm/notifier
+          tag: sha-a50218b
+        config:
+          DOCUMENTS_BUCKET: steakllm-documents-066591056087
+          CATALOG_TABLE: steakllm-catalog
+          KAFKA_BOOTSTRAP: steakllm-kafka-bootstrap.kafka.svc:9092
+          TOPIC_DOCUMENTS: documents
+          TOPIC_DOCUMENTS_RETRY: documents.retry
+          TOPIC_DOCUMENTS_DLQ: documents.dlq
+          LOG_LEVEL: INFO
+          NOTIFY_SINK: sns
+          SNS_TOPIC_ARN: arn:aws:sns:us-east-1:066591056087:steakllm-notifications
+          WATCHLIST_TABLE: steakllm-watchlist
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: steakllm
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

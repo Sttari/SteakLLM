@@ -1,0 +1,42 @@
+# The embedder (Step 6.4 on the cluster): consumes documents, extracts and chunks the text, embeds through Ollama, upserts into Qdrant, marks the catalog row indexed. Pod Identity steakllm/embedder (S3 read, catalog). Wave 4, beside the gateway (Kafka, Qdrant and Ollama are up by then). The image tag is the
+# release's sha-<7>; bumping it is a pull request here.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: embedder
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Sttari/SteakLLM.git
+    targetRevision: main
+    path: charts/worker
+    helm:
+      releaseName: embedder
+      valuesObject:
+        name: embedder
+        image:
+          repository: 066591056087.dkr.ecr.us-east-1.amazonaws.com/steakllm/embedder
+          tag: sha-a50218b
+        config:
+          DOCUMENTS_BUCKET: steakllm-documents-066591056087
+          CATALOG_TABLE: steakllm-catalog
+          KAFKA_BOOTSTRAP: steakllm-kafka-bootstrap.kafka.svc:9092
+          TOPIC_DOCUMENTS: documents
+          TOPIC_DOCUMENTS_RETRY: documents.retry
+          TOPIC_DOCUMENTS_DLQ: documents.dlq
+          LOG_LEVEL: INFO
+          QDRANT_URL: http://qdrant.qdrant.svc:6333
+          QDRANT_COLLECTION: documents
+          EMBEDDINGS_URL: http://ollama.ollama.svc:11434/v1
+          EMBEDDING_MODEL: all-minilm
+          EMBEDDING_DIM: "384"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: steakllm
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

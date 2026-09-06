@@ -43,3 +43,9 @@ variable "secret_recovery_days" {
   type        = number
   default     = 7
 }
+
+variable "watchlist_table" {
+  description = "The notifier's watch-list table (infra/data, 10.5)."
+  type        = string
+  default     = "steakllm-watchlist"
+}
