@@ -83,7 +83,7 @@ spec:
             - { name: work, mountPath: /work }
             - { name: tmp, mountPath: /tmp }
           resources:
-            requests: { cpu: 500m, memory: 2Gi }
+            requests: { cpu: 100m, memory: 512Mi } # the guard is a no-op most days; a fresh node is nearly full of requests (Incident 45b)
             limits: { cpu: "2", memory: 6Gi } # four 4 GB shards in flight OOM-killed at 2Gi (Incident 35c); the node has 16 GiB
           securityContext:
             allowPrivilegeEscalation: false
