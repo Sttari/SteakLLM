@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from steakllm_common.logging import get_logger
 
@@ -69,6 +69,8 @@ class Router:
     probe_cache_seconds: float = 2.0
     clock: Callable[[], float] = time.monotonic
     demand: int = 0  # bumped on every fallback; Step 9 turns this into the GPU summons
+    vllm_model: str = "Qwen/Qwen2.5-7B-Instruct"
+    sleep: Callable[[float], None] = time.sleep
     _probe: tuple[float, bool] | None = None
 
     def vllm_healthy(self) -> bool:
@@ -89,11 +91,35 @@ class Router:
         self.demand += 1
         return "bedrock"
 
-    def complete(self, req: ChatRequest) -> tuple[str, ChatResult]:
+    def wait_for_vllm(self, seconds: float, poll: float = 5.0) -> bool:
+        """`x-prefer-vllm-seconds`: a caller that can wait (the summarizer, the eval) gives vLLM
+        up to `seconds` to become healthy — the demand signal was raised by the fallbacks
+        that summon it. Returns True when it is; never longer than asked."""
+        deadline = self.clock() + seconds
+        while True:
+            self._probe = None  # a fresh probe each round, not the cached one
+            if self.vllm_healthy():
+                self.breaker.record_success()
+                return True
+            remaining = deadline - self.clock()
+            if remaining <= 0:
+                return False
+            self.sleep(min(poll, remaining))
+
+    def complete(
+        self, req: ChatRequest, prefer: str | None = None, wait_seconds: float = 0
+    ) -> tuple[str, ChatResult]:
+        """`prefer`: "bedrock" skips vLLM for this request; "vllm" + wait_seconds waits for it.
+        The mode name the client sent (`llm`/`docs`) never reaches a backend: vLLM gets its served
+        model name, Bedrock its model id (Incident 40)."""
+        if prefer == "bedrock":
+            return "bedrock", self.bedrock.chat(req)
+        if prefer == "vllm" and wait_seconds > 0 and not self.vllm_healthy():
+            self.wait_for_vllm(wait_seconds)
         backend = self.choose()
         if backend == "vllm":
             try:
-                result = self.vllm.chat(req)
+                result = self.vllm.chat(replace(req, model=self.vllm_model))
                 self.breaker.record_success()
                 return "vllm", result
             except Exception as e:  # noqa: BLE001 — any vLLM failure means "fall back now"

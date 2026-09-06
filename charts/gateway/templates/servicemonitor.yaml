@@ -1,0 +1,17 @@
+# The gateway's /metrics (11.4): chat requests, tokens and latency by backend — the cost dashboard's
+# input. kube-prometheus-stack selects every ServiceMonitor; the monitoring room may reach 8000 (8.10).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gateway.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "gateway.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s

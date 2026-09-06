@@ -21,7 +21,7 @@ class FakeRouter:
     backend: str = "bedrock"
     seen: list = field(default_factory=list)
 
-    def complete(self, req):
+    def complete(self, req, prefer=None, wait_seconds=0):
         self.seen.append(req)
         if req.stream:
             chunks = [b'data: {"choices":[{"delta":{"content":"hi"}}]}\n\n', b"data: [DONE]\n\n"]
@@ -248,3 +248,9 @@ def test_probes_and_openapi(client):
     assert {"/v1/chat/completions", "/v1/uploads", "/v1/documents/{doc_id}", "/catalog"} <= set(
         paths
     )
+
+
+def test_metrics_endpoint_exposes_chat_counters(client):
+    r = client.get("/metrics")
+    assert r.status_code == 200
+    assert b"steakllm_chat_requests_total" in r.content

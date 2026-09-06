@@ -1,0 +1,25 @@
+{
+  "fixture": "# Ferrous Foods memo EVAL\n\nThe Rotterdam hub opened in July and now handles all EMEA cold-chain logistics. The Leeds depot closed in June. Headcount is 2,140. Guidance for the year is unchanged: revenue growth of 10 to 12 percent. The CFO is Ines Marchetti. The new cold-chain fleet has 48 trucks, all electric. The Oslo office moves to a four-day week in October. Average delivery time fell from 31 hours to 19 hours. The Q3 board meeting is on 14 October in Lyon. The main competitor named in the memo is NordCold. Freezer capacity in Rotterdam is 12,000 pallets. The safety incident count for the quarter is zero.\n",
+  "questions": [
+    {"q": "Which city hosts the new hub?", "facts": ["rotterdam"]},
+    {"q": "In which month did the Rotterdam hub open?", "facts": ["july"]},
+    {"q": "What does the Rotterdam hub handle?", "facts": ["cold-chain", "emea"]},
+    {"q": "Which depot closed, and when?", "facts": ["leeds", "june"]},
+    {"q": "What is the headcount?", "facts": ["2,140", "2140"]},
+    {"q": "What is the revenue growth guidance for the year?", "facts": ["10", "12"]},
+    {"q": "Is the guidance changed or unchanged?", "facts": ["unchanged"]},
+    {"q": "Who is the CFO?", "facts": ["marchetti"]},
+    {"q": "How many trucks are in the new cold-chain fleet?", "facts": ["48"]},
+    {"q": "What powers the new trucks?", "facts": ["electric"]},
+    {"q": "Which office moves to a four-day week?", "facts": ["oslo"]},
+    {"q": "When does the four-day week start?", "facts": ["october"]},
+    {"q": "What was the average delivery time before the change?", "facts": ["31"]},
+    {"q": "What is the average delivery time now?", "facts": ["19"]},
+    {"q": "On what date is the Q3 board meeting?", "facts": ["14 october", "october 14"]},
+    {"q": "Where is the Q3 board meeting held?", "facts": ["lyon"]},
+    {"q": "Which competitor does the memo name?", "facts": ["nordcold"]},
+    {"q": "What is the freezer capacity in Rotterdam?", "facts": ["12,000", "12000"]},
+    {"q": "How many safety incidents were there this quarter?", "facts": ["zero", "0"]},
+    {"q": "Which region's logistics does the hub cover?", "facts": ["emea"]}
+  ]
+}

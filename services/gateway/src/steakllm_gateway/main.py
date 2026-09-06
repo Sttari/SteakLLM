@@ -32,6 +32,7 @@ def build_deps() -> Deps:
         bedrock=BedrockBackend(bedrock_client(s), s.bedrock_model_id),
         breaker=CircuitBreaker(s.breaker_failures, s.breaker_open_seconds),
         probe_cache_seconds=s.vllm_probe_cache_seconds,
+        vllm_model=s.vllm_model,
     )
     producer = make_producer(s)
     # ready = the broker answers a metadata request for the chats topic (bootstrap_connected() stays

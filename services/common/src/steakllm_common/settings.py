@@ -69,12 +69,16 @@ class Settings(BaseSettings):
 
     # vLLM (the stub locally) and the gateway
     vllm_url: str = "http://localhost:8081"
+    # the served name vLLM answers to; the gateway maps its modes (llm/docs) onto it (11.7)
+    vllm_model: str = "Qwen/Qwen2.5-7B-Instruct"
     gateway_url: str = "http://localhost:8000/v1"
     gateway_api_key: str = "change-me"
 
     # Summarizer
     summarizer_max_chars: int = 6000  # prompt budget: the first N characters of the document
-    summarizer_prefer_vllm_seconds: int = 600  # hint to the gateway: wait this long for vLLM
+    # the summarizer never waits for the GPU (0): Bedrock summarizes within the 90 s promise and
+    # vLLM is used whenever it is up; a caller that means to wait (the eval) sends its own header
+    summarizer_prefer_vllm_seconds: int = 0
 
     # Notifier
     watch_list: list[str] = [

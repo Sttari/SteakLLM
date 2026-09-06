@@ -16,6 +16,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from pydantic import BaseModel, Field
 from steakllm_common.kafka import produce
 from steakllm_common.logging import bound, get_logger
@@ -31,6 +32,20 @@ from .router import Router
 log = get_logger(__name__)
 
 MODELS = ("llm", "docs")
+
+# Usage as metrics (11.4): what the cost dashboard multiplies by prices.
+CHAT_REQUESTS = Counter(
+    "steakllm_chat_requests_total", "Chat completions", ["backend", "model", "status"]
+)
+CHAT_TOKENS = Counter(
+    "steakllm_chat_tokens_total", "Tokens by backend and direction", ["backend", "direction"]
+)
+CHAT_LATENCY = Histogram(
+    "steakllm_chat_latency_seconds",
+    "Chat completion latency by backend",
+    ["backend"],
+    buckets=(0.25, 0.5, 1, 2, 3, 5, 8, 13, 21, 34, 60),
+)
 
 
 def key_id(key: str) -> str:
@@ -92,6 +107,12 @@ def create_app(deps: Deps) -> FastAPI:
             "`x-backend` (vllm|bedrock) and token counts."
         ),
     )
+    try:  # traces (ADR-0013): a span per request when an OTLP endpoint is configured
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
+        FastAPIInstrumentor.instrument_app(app, excluded_urls="healthz,readyz,metrics")
+    except Exception:  # noqa: BLE001 — tracing is optional; the app must start without it
+        log.warning("fastapi instrumentation not installed")
 
     def auth(request: Request) -> str:
         header = request.headers.get("authorization", "")
@@ -116,6 +137,10 @@ def create_app(deps: Deps) -> FastAPI:
         return policy
 
     # ---- probes ----------------------------------------------------------------------------
+    @app.get("/metrics", summary="Prometheus metrics", tags=["probes"], include_in_schema=False)
+    def metrics() -> Response:
+        return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
     @app.get("/healthz", summary="Liveness", tags=["probes"])
     def healthz() -> dict[str, str]:
         return {"status": "alive"}
@@ -165,8 +190,12 @@ def create_app(deps: Deps) -> FastAPI:
         )
         trace = uuid.uuid4().hex
         t0 = time.monotonic()
+        prefer = request.headers.get("x-prefer-backend") or (
+            "vllm" if request.headers.get("x-prefer-vllm-seconds") else None
+        )
+        wait_seconds = float(request.headers.get("x-prefer-vllm-seconds") or 0)
         with bound(trace_id=trace, api_key_id=kid, session_id=session):
-            backend, result = deps.router.complete(req)
+            backend, result = deps.router.complete(req, prefer=prefer, wait_seconds=wait_seconds)
 
             def finish() -> None:
                 usage = result.usage or {}
@@ -174,6 +203,10 @@ def create_app(deps: Deps) -> FastAPI:
                 tokens_out = int(usage.get("completion_tokens", 0))
                 deps.ledger.add_tokens(kid, tokens_in + tokens_out)
                 latency_ms = int((time.monotonic() - t0) * 1000)
+                CHAT_REQUESTS.labels(backend=backend, model=body.model, status="ok").inc()
+                CHAT_TOKENS.labels(backend=backend, direction="in").inc(tokens_in)
+                CHAT_TOKENS.labels(backend=backend, direction="out").inc(tokens_out)
+                CHAT_LATENCY.labels(backend=backend).observe(latency_ms / 1000)
                 ev = {
                     "id": str(uuid.uuid4()),
                     "type": "ChatCompleted",
