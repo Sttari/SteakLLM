@@ -346,6 +346,12 @@ The first summon launched the node in 38 s and had the weights on the NVMe by fi
 *Fix:* `network-policies` at wave −1: right after the rooms (−2), before anything moves in (PR #92). Nothing else changed.
 *Lesson:* order the walls before the tenants. A sync wave is a dependency statement; "policies last" said the walls depended on the workloads, which is backwards. Rebuild drills (8.11) should read `kubectl get networkpolicy -A` as a done-when.
 
+**Incident 44 — the first doorbell ring hung for its full 60 s: the Lambda's security group had no path to Secrets Manager** (Sep 6 2026, Step 10.4)
+*Symptom:* EventBridge invoked the Lambda for the test upload; the log showed START, then END and a REPORT at exactly 60 000 ms with no application line; no catalog row; the retries parked the event in the DLQ.
+*Cause:* the group allowed egress only to the Kafka door and to the S3 and DynamoDB gateway-endpoint prefix lists — "no NAT, no internet", by design. The very first thing the handler does is fetch the cluster CA from Secrets Manager, which has no gateway endpoint; the TCP connect had nowhere to go and boto3 waited.
+*Fix:* one egress rule, 443 to anywhere, so the one call rides the NAT (PR #97). An interface endpoint (≈ $7/month) would keep the group closed; noted for Step 11 if the pipeline grows more AWS calls.
+*Lesson:* a "tight" security group is a list of every dependency; write the list from the code's first hundred lines, not from the diagram. A Lambda that logs nothing and dies at its timeout is blocked on its first network call.
+
 **Open item — ECR scan-on-push did not scan the multi-arch images** (Sep 2 2026, Step 6.12)
 The five repositories have `scan_on_push = true` and the registry is in `BASIC` scanning mode, yet after the first release every image — the `sha-3432f6a` index and its two platform children — shows scan status `None`. Basic scanning does not scan an image index, and the children pushed as part of one did not trigger a scan either. Trivy in `release.yml` is the gate that actually ran (0 fixable CRITICALs per image), so nothing shipped unscanned. Candidates: a post-push step in `release.yml` that calls `ecr:StartImageScan` on each child digest and waits for the verdict (the release role would need that one action; bootstrap apply), or enhanced scanning (Inspector, paid) at Step 11. Decide before Step 8 pulls these images onto the node.
 
@@ -555,3 +561,6 @@ Everything that went sideways for a minute or more, whether or not it earned an 
 - **EC2 forbids apostrophes in security-group descriptions** (`InvalidParameterValue: Invalid security group description`); the apply failed on both groups and cancelled the three modules behind them. Plain ASCII, no possessives. (Sep 5)
 - **A pod created before its Pod Identity association exists never gets credentials**: the agent injects them at admission. Restart the Deployment after the association lands (`no EC2 IMDS role found` is the tell). (Sep 5)
 - **Each rebuild renames the API endpoint**: the SSM tunnel command must take the host from `aws eks describe-cluster` every time, never from memory. (Sep 5)
+- **The table I designed did not match the code that uses it.** 10.1(c) chose a `pk`/`sk` single table; the ingest, embedder, summarizer, notifier and gateway all address the catalog with `Key={"doc_id": …}` since Step 6. Read the callers before designing the store. The empty table was replaced (deletion protection off by hand, named; Terraform re-enabled it). (Sep 5)
+- **Lambda container images are single-architecture**: the multi-arch manifest the release pushes for the services is refused; the `lambda` target is built for arm64 only under its own tag. (Sep 5)
+- **`terraform validate` locally must be read in full**: `validate | head -n 1` printed an empty line and I shipped an undeclared variable; CI caught it. (Sep 5)
