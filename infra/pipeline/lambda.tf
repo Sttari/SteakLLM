@@ -5,7 +5,7 @@
 variable "ingest_image_tag" {
   description = "steakllm/ingest image tag of the Lambda flavour (release.yml pushes lambda-sha-<7>)."
   type        = string
-  default     = "lambda-sha-e57f114"
+  default     = "lambda-sha-3de5fb2"
 }
 
 data "aws_iam_policy_document" "lambda_assume" {
@@ -38,6 +38,11 @@ data "aws_iam_policy_document" "ingest" {
     sid       = "RecordTheDocument"
     actions   = ["dynamodb:UpdateItem", "dynamodb:DeleteItem", "dynamodb:GetItem", "dynamodb:Scan"]
     resources = [local.table_arn]
+  }
+  statement {
+    sid       = "FindTheKafkaDoor"
+    actions   = ["elasticloadbalancing:DescribeLoadBalancers", "elasticloadbalancing:DescribeTags"] # Describe* accepts no resource ARN
+    resources = ["*"]
   }
   statement {
     sid       = "ReadTheClusterCA"
@@ -104,14 +109,15 @@ resource "aws_lambda_function" "ingest" {
 
   environment {
     variables = {
-      DOCUMENTS_BUCKET        = local.documents_bucket
-      CATALOG_TABLE           = local.catalog_table
-      QUARANTINE_PREFIX       = var.quarantine_prefix
-      KAFKA_BOOTSTRAP         = local.kafka_bootstrap
-      KAFKA_SECURITY_PROTOCOL = "SSL"
-      KAFKA_CA_SECRET_ID      = aws_secretsmanager_secret.kafka_ca.name
-      TOPIC_DOCUMENTS         = "documents"
-      LOG_LEVEL               = "INFO"
+      DOCUMENTS_BUCKET           = local.documents_bucket
+      CATALOG_TABLE              = local.catalog_table
+      QUARANTINE_PREFIX          = var.quarantine_prefix
+      KAFKA_BOOTSTRAP            = "kafka-door:${var.kafka_door_port}" # the host is a placeholder; the port is used
+      KAFKA_BOOTSTRAP_LOOKUP_TAG = local.kafka_door_tag                # the NLB is found by this tag at start
+      KAFKA_SECURITY_PROTOCOL    = "SSL"
+      KAFKA_CA_SECRET_ID         = aws_secretsmanager_secret.kafka_ca.name
+      TOPIC_DOCUMENTS            = "documents"
+      LOG_LEVEL                  = "INFO"
     }
   }
 

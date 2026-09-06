@@ -15,6 +15,7 @@ output "ingest_dlq_url" {
   value = aws_sqs_queue.ingest_dlq.id
 }
 
-output "kafka_bootstrap_through_the_door" {
-  value = local.kafka_bootstrap
+output "kafka_door_tag" {
+  description = "The Lambda finds the bootstrap NLB by this service.k8s.aws/stack tag at start."
+  value       = local.kafka_door_tag
 }
