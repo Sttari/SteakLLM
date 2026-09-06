@@ -173,14 +173,15 @@ data:
         out = {"date": day, "summary": summary, "results": results}
         bucket = os.environ.get("EVAL_BUCKET")
         if bucket:
-            s3 = boto3.client("s3")
+            region = os.environ.get("AWS_REGION", "us-east-1")
+            s3 = boto3.client("s3", region_name=region)
             s3.put_object(
                 Bucket=bucket,
                 Key=f"{os.environ.get('EVAL_PREFIX', 'eval/')}{day}.json",
                 Body=json.dumps(out, indent=1).encode(),
                 ContentType="application/json",
             )
-            cw = boto3.client("cloudwatch")
+            cw = boto3.client("cloudwatch", region_name=region)
             cw.put_metric_data(
                 Namespace="SteakLLM/Eval",
                 MetricData=[
