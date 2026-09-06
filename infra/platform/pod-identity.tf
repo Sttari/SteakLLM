@@ -10,7 +10,6 @@ locals {
   bucket_arn  = "arn:aws:s3:::${var.documents_bucket}"
   table_arn   = "arn:aws:dynamodb:${var.region}:${local.account_id}:table/${var.catalog_table}"
   topic_arn   = "arn:aws:sns:${var.region}:${local.account_id}:${var.notifications_topic}"
-  model_arn   = "arn:aws:bedrock:${var.region}::foundation-model/${var.bedrock_model_id}"
   secrets_arn = "arn:aws:secretsmanager:${var.region}:${local.account_id}:secret:${var.project}/*"
 
   # service account → { namespace, policy document }
