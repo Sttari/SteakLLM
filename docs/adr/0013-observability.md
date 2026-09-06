@@ -1,6 +1,6 @@
 # 0013 — Observability: OpenTelemetry traces through Kafka headers into Tempo beside Loki; alerts by SNS with a runbook each; SLOs as promises with error budgets; a nightly eval of both backends
 
-Status: proposed (accepted when 11.5's first alert has fired and arrived, and one trace spans upload to summary)
+Status: accepted (Sep 6 2026: a trace spans doorbell → embedder → summarizer → notifier; the first alert fired and arrived on the topic; amended below)
 Date: 2026-09-06
 
 ## Context
@@ -27,3 +27,10 @@ Steps 8–10 built logs (JSON lines into Loki) and metrics (Prometheus, Grafana,
 - Tempo adds one small pod and a 10 Gi volume (72 h retention) to a full CPU node; 11.7's request-budget decision comes first.
 - The Lambda and the workers gain an OTel dependency (≈ 15 MB in the images); traces are sampled at 100% at our volume.
 - The eval costs ≈ $0.25 a night (a ten-minute GPU, Bedrock tokens); the cost dashboard shows it.
+
+## Amendments (Sep 6 2026)
+
+- **The summarizer never waits for the GPU.** Honouring `x-prefer-vllm-seconds` in the gateway made the summarizer's old 600 s hint stall every summary; the e2e in CI caught it. Only the eval asks to wait.
+- **The Lambda's doorbell span is dropped, not exported:** the Lambda cannot reach the in-cluster Tempo by cluster DNS. The trace still starts at the doorbell (its id travels in the Kafka header), so the waterfall begins at the embedder until Step 12 gives Tempo a door.
+- **The eval publishes to CloudWatch, not to Prometheus:** a CronJob has nothing to scrape after it ends; Grafana reads `SteakLLM/Eval` through its CloudWatch data source (Pod Identity).
+- **Cost while up:** Tempo is one pod and a 10 Gi volume; nothing else in this ADR costs at rest.
