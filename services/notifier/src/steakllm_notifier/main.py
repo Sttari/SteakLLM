@@ -27,9 +27,33 @@ def build_sink() -> Sink:
     return StdoutSink()
 
 
+def load_watch_list(s, table=None) -> list[str]:
+    """The watch-list from DynamoDB when WATCHLIST_TABLE is set (Step 10.5: `term` items), else the
+    settings list. Read once at start; a changed list means a restart (Argo's rollout does it)."""
+    if not s.watchlist_table:
+        return list(s.watch_list)
+    if table is None:
+        kwargs = {"region_name": s.aws_region}
+        if s.dynamodb_endpoint_url:
+            kwargs.update(
+                endpoint_url=s.dynamodb_endpoint_url,
+                aws_access_key_id="local",
+                aws_secret_access_key="local",
+            )
+        table = boto3.resource("dynamodb", **kwargs).Table(s.watchlist_table)
+    terms: list[str] = []
+    resp = table.scan(ProjectionExpression="term")
+    terms += [i["term"] for i in resp.get("Items", []) if i.get("term")]
+    while "LastEvaluatedKey" in resp:
+        resp = table.scan(ProjectionExpression="term", ExclusiveStartKey=resp["LastEvaluatedKey"])
+        terms += [i["term"] for i in resp.get("Items", []) if i.get("term")]
+    return sorted(set(terms))
+
+
 def cli(argv: list[str] | None = None) -> int:
     configure("notifier")
     s = get_settings()
+    s.watch_list = load_watch_list(s)
     deps = Deps(settings=s, table=catalog_table(s), sink=build_sink())
     consumer = make_consumer(s, GROUP, [s.topic_documents, s.topic_documents_retry])
     loop = ConsumerLoop(

@@ -48,6 +48,9 @@ logs: ## follow the stack's logs (SERVICE=name for one service)
 e2e: ## the end-to-end test against the running stack: upload → summarized → docs answer, under 60 s
 	uv run --with pytest --with httpx tests/e2e/test_pipeline.py
 
+e2e-cloud: ## the same end-to-end test against the cluster over the tailnet (Step 10.5): 90 s budget; the key is read from Secrets Manager, never printed
+	GATEWAY_URL=http://gateway:8000/v1 E2E_BUDGET_SECONDS=90 GATEWAY_API_KEY="$$(aws secretsmanager get-secret-value --secret-id steakllm/gateway --query SecretString --output text | python3 -c 'import sys,json; print(json.load(sys.stdin)["api_key"])')" uv run --with pytest --with httpx tests/e2e/test_pipeline.py
+
 demo: ## drive the sample PDF through the stack by hand: MinIO → Kafka → Ollama → Qdrant → Bedrock → catalog
 	uv run compose/demo.py
 
