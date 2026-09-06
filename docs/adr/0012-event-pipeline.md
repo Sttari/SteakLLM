@@ -1,6 +1,6 @@
 # 0012 — The cloud event pipeline: S3 → EventBridge → a Lambda in the VPC → Kafka through an internal NLB; DynamoDB single table with PITR; a dead-letter queue; SNS by email
 
-Status: proposed (accepted when 10.5's acceptance passes: upload → searchable and an email in under 90 s)
+Status: accepted (Sep 6 2026: upload → answered in 7.3 s over the tailnet; drills 05–10 pass; amended below)
 Date: 2026-09-04
 
 ## Context
@@ -29,3 +29,14 @@ Steps 5–6 built the pipeline against local stand-ins (MinIO, DynamoDB Local, a
 - Two more Terraform modules (`data`, `pipeline`) with their own gates; the LB controller and a second Kafka listener in `platform/`; the summarizer gets its missing Pod Identity role.
 - The Kafka door is the first LoadBalancer Service in the cluster: `cluster-down`'s first step now has something to remove, and the "never widen the public surface" rule holds because the NLB is internal and SG-scoped.
 - Drills 05–10 become the acceptance of this ADR, not the code review.
+
+## Amendments (Sep 5–6 2026, from building and drilling it)
+
+- **The catalog is keyed by `doc_id`**, not the `pk`/`sk` single table decision 4 described: five services already addressed it that way (Step 6's contract). The notifier's watch-list is its own small table, `steakllm-watchlist`.
+- **The Lambda finds the door itself.** A Terraform data lookup of the controller-made NLB broke every `cluster-up` while the cluster was down (Incident 47); the Lambda resolves the bootstrap NLB at start by the controller's `service.k8s.aws/stack` tag. Rule: modules that must apply on day zero may name what the cluster will create, never read it.
+- **The cluster CA is part of the rebuild.** A new cluster mints a new Strimzi CA; `make kafka-ca` re-fills `steakllm/kafka-ca` after `cluster-up` (Incident 47c).
+- **The Lambda needs HTTPS out through the NAT** for its one Secrets Manager call; the "no NAT, no internet" security group was a dependency list missing its first line (Incident 44). An interface endpoint (≈ $7/month) is the alternative if the list grows.
+- **The door's NLBs must leave before the controller does.** `cluster-down` cascades the kafka Application first, waits for the LoadBalancer Services, keeps the controller until then, and refuses to tear eks down while a load balancer exists (Incident 46).
+- **Service links are off on every pod chart** (`enableServiceLinks: false`): a Service named like a settings prefix injects `<NAME>_PORT=tcp://…` (Incidents 39, 45).
+- **Cost while the cluster is up:** two internal NLBs ≈ $1.08/day; everything else in this ADR is pay-per-use at pennies.
+- **Measured:** PUT → indexed 5.7 s → summarized 6.8 s → answered 7.3 s; rebuild of the index from the log 21 s for 17 documents; PITR restore 210 s; the doorbell's retries park an event after 285 s.
