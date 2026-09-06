@@ -76,7 +76,9 @@ class Settings(BaseSettings):
 
     # Summarizer
     summarizer_max_chars: int = 6000  # prompt budget: the first N characters of the document
-    summarizer_prefer_vllm_seconds: int = 600  # hint to the gateway: wait this long for vLLM
+    # the summarizer never waits for the GPU (0): Bedrock summarizes within the 90 s promise and
+    # vLLM is used whenever it is up; a caller that means to wait (the eval) sends its own header
+    summarizer_prefer_vllm_seconds: int = 0
 
     # Notifier
     watch_list: list[str] = [
