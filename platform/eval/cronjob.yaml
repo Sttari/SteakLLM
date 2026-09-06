@@ -1,0 +1,295 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: eval
+  namespace: steakllm
+automountServiceAccountToken: false
+---
+# The eval runs from the gateway image (it has httpx and boto3) with the script mounted from a ConfigMap;
+# uv is not needed at run time. steakllm.io/role: worker gives it the workers' egress (the gateway, 443 out).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eval-script
+  namespace: steakllm
+data:
+  eval.py: |
+    # /// script
+    # requires-python = ">=3.12"
+    # dependencies = ["httpx>=0.27", "boto3>=1.35"]
+    # ///
+    """The nightly eval (Step 11.6): the same twenty fact questions to both chat backends through the
+    gateway, scored on facts, written to S3 and to CloudWatch metrics for the dashboard.
+
+    The fixture memo is uploaded once (presigned PUT), waited for (`summarized`), then each question is
+    asked with `model=docs` twice: `x-prefer-backend: bedrock`, and `x-prefer-backend: vllm` with
+    `x-prefer-vllm-seconds` (the gateway waits for the GPU that the first fallbacks summon). A question
+    scores 1 when every expected fact appears in the answer (case-insensitive substring). The GPU is
+    summoned by the run and removed by the idle chain; the reaper at 03:00 is the net.
+
+    Env: GATEWAY_URL (…/v1), GATEWAY_API_KEY (never printed), EVAL_BUCKET, EVAL_PREFIX (eval/),
+    EVAL_PREFER_VLLM_SECONDS (600), EVAL_BACKENDS (bedrock,vllm), AWS_REGION.
+    Run by hand: `uv run services/eval/eval.py --backends bedrock` (no GPU) or with both.
+    """
+
+    from __future__ import annotations
+
+    import argparse
+    import datetime as dt
+    import hashlib
+    import json
+    import os
+    import statistics
+    import sys
+    import time
+    from pathlib import Path
+
+    import boto3
+    import httpx
+
+    HERE = Path(__file__).parent
+
+
+    def upload_fixture(client: httpx.Client, gw: str, key: str, body: bytes) -> str:
+        doc_id = hashlib.sha256(body).hexdigest()
+        up = client.post(
+            f"{gw}/uploads",
+            headers={"authorization": f"Bearer {key}"},
+            json={
+                "filename": "eval-memo.md",
+                "content_type": "text/markdown",
+                "size_bytes": len(body),
+            },
+        )
+        up.raise_for_status()
+        u = up.json()
+        put = httpx.request(
+            u.get("method", "PUT"),
+            u["url"],
+            content=body,
+            headers=u.get("headers", {}),
+            timeout=60,
+        )
+        put.raise_for_status()
+        deadline = time.time() + 180
+        while time.time() < deadline:
+            r = client.get(
+                f"{gw}/documents/{doc_id}", headers={"authorization": f"Bearer {key}"}
+            )
+            if r.status_code == 200 and r.json().get("summary"):
+                return doc_id
+            time.sleep(5)
+        raise SystemExit("the fixture was not summarized within 180 s")
+
+
+    def ask(
+        client: httpx.Client, gw: str, key: str, q: str, backend: str, wait: int
+    ) -> dict:
+        headers = {"authorization": f"Bearer {key}", "x-prefer-backend": backend}
+        if backend == "vllm":
+            headers["x-prefer-vllm-seconds"] = str(wait)
+        t0 = time.perf_counter()
+        r = client.post(
+            f"{gw}/chat/completions",
+            headers=headers,
+            json={
+                "model": "docs",
+                "messages": [{"role": "user", "content": q}],
+                "max_tokens": 80,
+                "temperature": 0,
+            },
+            timeout=wait + 120,
+        )
+        dt_s = time.perf_counter() - t0
+        r.raise_for_status()
+        body = r.json()
+        return {
+            "answer": body["choices"][0]["message"]["content"],
+            "backend": r.headers.get("x-backend", "?"),
+            "latency_s": round(dt_s, 2),
+            "tokens_out": int(
+                r.headers.get("x-tokens-out")
+                or body.get("usage", {}).get("completion_tokens", 0)
+            ),
+        }
+
+
+    def main() -> int:
+        ap = argparse.ArgumentParser()
+        ap.add_argument(
+            "--backends", default=os.environ.get("EVAL_BACKENDS", "bedrock,vllm")
+        )
+        ap.add_argument(
+            "--wait",
+            type=int,
+            default=int(os.environ.get("EVAL_PREFER_VLLM_SECONDS", "600")),
+        )
+        ap.add_argument(
+            "--no-upload", action="store_true", help="the fixture is already indexed"
+        )
+        a = ap.parse_args()
+        gw = os.environ.get("GATEWAY_URL", "http://gateway:8000/v1").rstrip("/")
+        key = os.environ["GATEWAY_API_KEY"]
+        spec = json.loads((HERE / "questions.json").read_text())
+        client = httpx.Client(timeout=120)
+        if not a.no_upload:
+            doc = upload_fixture(client, gw, key, spec["fixture"].encode())
+            print(f"fixture {doc[:12]} summarized")
+        results: dict[str, list[dict]] = {}
+        for backend in a.backends.split(","):
+            rows = []
+            for item in spec["questions"]:
+                r = ask(client, gw, key, item["q"], backend, a.wait)
+                answer = r["answer"].lower()
+                r["score"] = (
+                    1
+                    if all(
+                        any(
+                            f in answer for f in ([fact] if isinstance(fact, str) else fact)
+                        )
+                        for fact in item["facts"]
+                    )
+                    else 0
+                )
+                r["q"] = item["q"]
+                rows.append(r)
+                print(
+                    f"  [{backend}→{r['backend']}] {r['score']} {r['latency_s']:>5.1f}s  {item['q'][:50]}"
+                )
+            results[backend] = rows
+        summary = {}
+        for backend, rows in results.items():
+            served = {r["backend"] for r in rows}
+            summary[backend] = {
+                "score": sum(r["score"] for r in rows) / len(rows),
+                "p50_latency_s": statistics.median(r["latency_s"] for r in rows),
+                "tokens_out": sum(r["tokens_out"] for r in rows),
+                "answered_by": sorted(served),
+            }
+            print(
+                f"{backend}: score {summary[backend]['score']:.2f} · p50 {summary[backend]['p50_latency_s']:.1f}s · answered by {sorted(served)}"
+            )
+        day = dt.datetime.now(dt.UTC).strftime("%Y-%m-%d")
+        out = {"date": day, "summary": summary, "results": results}
+        bucket = os.environ.get("EVAL_BUCKET")
+        if bucket:
+            s3 = boto3.client("s3")
+            s3.put_object(
+                Bucket=bucket,
+                Key=f"{os.environ.get('EVAL_PREFIX', 'eval/')}{day}.json",
+                Body=json.dumps(out, indent=1).encode(),
+                ContentType="application/json",
+            )
+            cw = boto3.client("cloudwatch")
+            cw.put_metric_data(
+                Namespace="SteakLLM/Eval",
+                MetricData=[
+                    {
+                        "MetricName": m,
+                        "Dimensions": [{"Name": "backend", "Value": b}],
+                        "Value": v,
+                    }
+                    for b, sm in summary.items()
+                    for m, v in (
+                        ("score", sm["score"]),
+                        ("p50_latency_s", sm["p50_latency_s"]),
+                    )
+                ],
+            )
+            print(f"written s3://{bucket}/eval/{day}.json and CloudWatch SteakLLM/Eval")
+        return 0
+
+
+    if __name__ == "__main__":
+        sys.exit(main())
+  questions.json: |
+    {
+      "fixture": "# Ferrous Foods memo EVAL\n\nThe Rotterdam hub opened in July and now handles all EMEA cold-chain logistics. The Leeds depot closed in June. Headcount is 2,140. Guidance for the year is unchanged: revenue growth of 10 to 12 percent. The CFO is Ines Marchetti. The new cold-chain fleet has 48 trucks, all electric. The Oslo office moves to a four-day week in October. Average delivery time fell from 31 hours to 19 hours. The Q3 board meeting is on 14 October in Lyon. The main competitor named in the memo is NordCold. Freezer capacity in Rotterdam is 12,000 pallets. The safety incident count for the quarter is zero.\n",
+      "questions": [
+        {"q": "Which city hosts the new hub?", "facts": ["rotterdam"]},
+        {"q": "In which month did the Rotterdam hub open?", "facts": ["july"]},
+        {"q": "What does the Rotterdam hub handle?", "facts": ["cold-chain", "emea"]},
+        {"q": "Which depot closed, and when?", "facts": ["leeds", "june"]},
+        {"q": "What is the headcount?", "facts": ["2,140", "2140"]},
+        {"q": "What is the revenue growth guidance for the year?", "facts": ["10", "12"]},
+        {"q": "Is the guidance changed or unchanged?", "facts": ["unchanged"]},
+        {"q": "Who is the CFO?", "facts": ["marchetti"]},
+        {"q": "How many trucks are in the new cold-chain fleet?", "facts": ["48"]},
+        {"q": "What powers the new trucks?", "facts": ["electric"]},
+        {"q": "Which office moves to a four-day week?", "facts": ["oslo"]},
+        {"q": "When does the four-day week start?", "facts": ["october"]},
+        {"q": "What was the average delivery time before the change?", "facts": ["31"]},
+        {"q": "What is the average delivery time now?", "facts": ["19"]},
+        {"q": "On what date is the Q3 board meeting?", "facts": ["14 october", "october 14"]},
+        {"q": "Where is the Q3 board meeting held?", "facts": ["lyon"]},
+        {"q": "Which competitor does the memo name?", "facts": ["nordcold"]},
+        {"q": "What is the freezer capacity in Rotterdam?", "facts": ["12,000", "12000"]},
+        {"q": "How many safety incidents were there this quarter?", "facts": ["zero", "0"]},
+        {"q": "Which region's logistics does the hub cover?", "facts": ["emea"]}
+      ]
+    }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: eval
+  namespace: steakllm
+  annotations:
+    ignore-check.kube-linter.io/no-liveness-probe: "one-shot job"
+    ignore-check.kube-linter.io/no-readiness-probe: "one-shot job"
+spec:
+  schedule: "30 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 1500
+      template:
+        metadata:
+          labels:
+            steakllm.io/role: worker
+            app.kubernetes.io/name: eval
+        spec:
+          serviceAccountName: eval
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          restartPolicy: Never
+          nodeSelector:
+            steakllm.io/pool: cpu
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: eval
+              image: 066591056087.dkr.ecr.us-east-1.amazonaws.com/steakllm/gateway:sha-a64304d
+              command: [python, /eval/eval.py]
+              env:
+                - { name: GATEWAY_URL, value: http://gateway.steakllm.svc:8000/v1 }
+                - { name: EVAL_BUCKET, value: steakllm-documents-066591056087 }
+                - { name: EVAL_PREFIX, value: eval/ }
+                - { name: EVAL_PREFER_VLLM_SECONDS, value: "600" }
+                - { name: AWS_REGION, value: us-east-1 }
+                - { name: HOME, value: /tmp }
+                - name: GATEWAY_API_KEY
+                  valueFrom:
+                    secretKeyRef: { name: gateway-keys, key: api_key }
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { cpu: 500m, memory: 512Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: [ALL] }
+              volumeMounts:
+                - { name: script, mountPath: /eval }
+                - { name: tmp, mountPath: /tmp }
+          volumes:
+            - name: script
+              configMap: { name: eval-script }
+            - name: tmp
+              emptyDir: {}

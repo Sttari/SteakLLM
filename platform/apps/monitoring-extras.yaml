@@ -1,0 +1,22 @@
+# The rules and dashboards we own, beside the kube-prometheus-stack chart: a PrometheusRule (11.5) and
+# the usage & cost dashboard ConfigMap (11.4). Wave 3 (after the operator's CRDs).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring-extras
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Sttari/SteakLLM.git
+    targetRevision: main
+    path: platform/monitoring/extras
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

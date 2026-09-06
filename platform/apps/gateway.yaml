@@ -18,7 +18,7 @@ spec:
       releaseName: gateway
       valuesObject:
         image:
-          tag: sha-3432f6a
+          tag: sha-a64304d
   destination:
     server: https://kubernetes.default.svc
     namespace: steakllm

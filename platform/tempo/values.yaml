@@ -1,0 +1,25 @@
+# Tempo 2.9 single-binary: one pod, a 10 Gi gp3 volume, 72 h of traces, OTLP/HTTP in. The logging room
+# is privileged-PSA (8.5) so no security-context fight; the pod runs non-root anyway.
+tempo:
+  retention: 72h
+  receivers:
+    otlp:
+      protocols:
+        http:
+          endpoint: 0.0.0.0:4318
+        grpc:
+          endpoint: 0.0.0.0:4317
+  resources:
+    requests: { cpu: 50m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 768Mi }
+persistence:
+  enabled: true
+  size: 10Gi
+  storageClassName: gp3
+nodeSelector:
+  steakllm.io/pool: cpu
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001

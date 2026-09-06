@@ -3,4 +3,4 @@ name: gateway
 description: SteakLLM gateway — the one front desk (OpenAI-compatible /v1, routing, quotas, uploads, the catalog)
 type: application
 version: 0.1.0
-appVersion: "sha-3432f6a"
+appVersion: "sha-a64304d"

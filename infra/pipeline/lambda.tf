@@ -5,7 +5,7 @@
 variable "ingest_image_tag" {
   description = "steakllm/ingest image tag of the Lambda flavour (release.yml pushes lambda-sha-<7>)."
   type        = string
-  default     = "lambda-sha-3f82e1a"
+  default     = "lambda-sha-a64304d"
 }
 
 data "aws_iam_policy_document" "lambda_assume" {
@@ -118,6 +118,8 @@ resource "aws_lambda_function" "ingest" {
       KAFKA_CA_SECRET_ID         = aws_secretsmanager_secret.kafka_ca.name
       TOPIC_DOCUMENTS            = "documents"
       LOG_LEVEL                  = "INFO"
+      # traces (11.3): the Lambda cannot reach the in-cluster Tempo (cluster DNS); its doorbell span is
+      # dropped until Step 12 gives Tempo a door of its own — the trace still starts here (its id travels).
     }
   }
 

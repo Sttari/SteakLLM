@@ -49,3 +49,9 @@ variable "watchlist_table" {
   type        = string
   default     = "steakllm-watchlist"
 }
+
+variable "bedrock_model_ids" {
+  description = "The Bedrock models the gateway may invoke (11.2): Nova Micro (the default) and Nova Lite (the better option behind a setting)."
+  type        = list(string)
+  default     = ["amazon.nova-micro-v1:0", "amazon.nova-lite-v1:0"]
+}
