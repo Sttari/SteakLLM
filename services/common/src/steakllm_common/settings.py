@@ -69,6 +69,8 @@ class Settings(BaseSettings):
 
     # vLLM (the stub locally) and the gateway
     vllm_url: str = "http://localhost:8081"
+    # the served name vLLM answers to; the gateway maps its modes (llm/docs) onto it (11.7)
+    vllm_model: str = "Qwen/Qwen2.5-7B-Instruct"
     gateway_url: str = "http://localhost:8000/v1"
     gateway_api_key: str = "change-me"
 

@@ -121,3 +121,41 @@ def test_vllm_failure_mid_request_falls_back_and_counts():
     backend, result = router.complete(REQ)
     assert backend == "bedrock" and bedrock.calls == 1 and breaker.failures == 1
     assert result.usage["prompt_tokens"] == 2
+
+
+def test_prefer_bedrock_skips_a_healthy_vllm():
+    router, vllm, bedrock, *_ = make(up=True)
+    backend, _ = router.complete(REQ, prefer="bedrock")
+    assert backend == "bedrock" and vllm.calls == 0 and bedrock.calls == 1
+
+
+def test_prefer_vllm_waits_until_it_is_healthy_then_uses_it():
+    router, vllm, bedrock, breaker, clock = make(up=False)
+    slept = []
+
+    def sleep(seconds):  # the GPU arrives after two polls
+        slept.append(seconds)
+        clock.t += seconds
+        if len(slept) == 2:
+            vllm.up = True
+
+    router.sleep = sleep
+    backend, _ = router.complete(REQ, prefer="vllm", wait_seconds=60)
+    assert backend == "vllm" and vllm.calls == 1 and bedrock.calls == 0
+    assert slept == [5.0, 5.0]
+
+
+def test_prefer_vllm_gives_up_after_the_wait_and_falls_back():
+    router, vllm, bedrock, breaker, clock = make(up=False)
+    router.sleep = lambda s: setattr(clock, "t", clock.t + s)
+    backend, _ = router.complete(REQ, prefer="vllm", wait_seconds=12)
+    assert backend == "bedrock" and bedrock.calls == 1
+
+
+def test_vllm_receives_its_served_model_name_not_the_mode():
+    router, vllm, *_ = make(up=True)
+    seen = []
+    vllm.chat = lambda req: (seen.append(req.model), FakeVllm().chat(req))[1]
+    router.vllm_model = "Qwen/Qwen2.5-7B-Instruct"
+    router.complete(REQ)
+    assert seen == ["Qwen/Qwen2.5-7B-Instruct"]

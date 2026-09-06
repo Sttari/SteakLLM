@@ -19,6 +19,7 @@ from steakllm_common.health import start_probe_server
 from steakllm_common.kafka import make_producer
 from steakllm_common.logging import configure, get_logger
 from steakllm_common.settings import get_settings
+from steakllm_common.tracing import tracer
 
 from .handler import Deps, handle
 
@@ -52,7 +53,8 @@ def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]
     configure("ingest")
     if _deps is None:  # reused across warm invocations
         _deps = build_deps()
-    produced = handle(event, _deps)
+    with tracer("ingest").start_as_current_span("doorbell"):
+        produced = handle(event, _deps)
     return {"produced": [e["type"] for e in produced]}
 
 

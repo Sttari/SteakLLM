@@ -26,6 +26,7 @@ from steakllm_contracts import EVENT_TYPES
 
 from .logging import bound, event_fields, get_logger
 from .settings import Settings
+from .tracing import inject, span_from_headers
 
 log = get_logger(__name__)
 
@@ -134,7 +135,9 @@ def make_consumer(s: Settings, group: str, topics: list[str]):
 def produce(producer, topic: str, event: dict[str, Any], headers: dict[str, str] | None = None):
     """Send one event. Key = doc_id (one document's events stay ordered in one partition) or id."""
     key = (event.get("doc_id") or event["id"]).encode()
-    hdrs = [(k, v.encode()) for k, v in (headers or {}).items()]
+    carrier = dict(headers or {})
+    inject(carrier)  # the trace continues on the consuming side (ADR-0013)
+    hdrs = [(k, v.encode()) for k, v in carrier.items()]
     return producer.send(topic, key=key, value=json.dumps(event).encode(), headers=hdrs)
 
 
@@ -214,7 +217,15 @@ class ConsumerLoop:
         if event.get("type") not in EVENT_TYPES:  # tolerant reader: skip, never fail
             log.warning("unknown event type skipped", event_type=event.get("type"), topic=rec.topic)
             return
-        with bound(**event_fields(event)):
+        with (
+            bound(**event_fields(event)),
+            span_from_headers(
+                f"consume {event.get('type')}",
+                headers,
+                event_type=event.get("type"),
+                topic=rec.topic,
+            ),
+        ):
             last: BaseException | None = None
             for i in range(self.policy.attempts):
                 try:

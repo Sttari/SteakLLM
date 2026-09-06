@@ -64,6 +64,10 @@ def configure(service: str, level: str = "INFO") -> None:
     for noisy in ("kafka", "botocore", "urllib3", "httpx", "httpcore"):
         logging.getLogger(noisy).setLevel("WARNING")
 
+    from .tracing import configure_tracing
+
+    configure_tracing(service)
+
 
 def get_logger(name: str) -> Logger:
     return Logger(logging.getLogger(name), {})
