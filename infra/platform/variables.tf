@@ -32,11 +32,6 @@ variable "notifications_topic" {
   default     = "steakllm-notifications"
 }
 
-variable "bedrock_model_id" {
-  description = "The one Bedrock model the gateway may invoke (same as the plan role's, infra/bootstrap)."
-  type        = string
-  default     = "amazon.nova-micro-v1:0"
-}
 
 variable "secret_recovery_days" {
   description = "Secrets Manager keeps a deleted secret this long before it is gone for good; 7 is the minimum non-zero. A rebuilt platform can then re-create the same names."
