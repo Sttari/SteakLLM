@@ -19,6 +19,7 @@ spec:
     spec:
       serviceAccountName: {{ .Values.name }}
       automountServiceAccountToken: false
+      enableServiceLinks: false # the gateway Service in this namespace would inject GATEWAY_PORT=tcp://…, which the settings read as an integer (Incidents 39, 45)
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       nodeSelector:
         {{- toYaml .Values.nodeSelector | nindent 8 }}
