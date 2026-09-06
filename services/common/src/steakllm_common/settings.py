@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     kafka_security_protocol: str = "PLAINTEXT"  # "PLAINTEXT" | "SSL"
     kafka_ssl_cafile: str | None = None
     kafka_ca_secret_id: str | None = None
+    kafka_bootstrap_lookup_tag: str | None = (
+        None  # find the Kafka door's NLB by its service.k8s.aws/stack tag at start (Lambda)
+    )
     topic_documents: str = "documents"
     topic_documents_retry: str = "documents.retry"
     topic_documents_dlq: str = "documents.dlq"

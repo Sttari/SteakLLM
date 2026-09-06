@@ -75,6 +75,35 @@ def tls_kwargs(s: Settings) -> dict:
     return {"security_protocol": "SSL", "ssl_cafile": cafile, "ssl_check_hostname": True}
 
 
+def resolve_bootstrap(s: Settings) -> str:
+    """The bootstrap address. Outside the cluster (the Lambda) the Kafka door is an NLB the AWS Load
+    Balancer Controller creates and names; its DNS name changes with every cluster rebuild, so it is
+    looked up by the controller's tag at start instead of being baked into an environment variable
+    (Incident 47). Inside the cluster, KAFKA_BOOTSTRAP is the Service name and this returns it."""
+    if not s.kafka_bootstrap_lookup_tag:
+        return s.kafka_bootstrap
+    import boto3
+
+    elb = boto3.client("elbv2", region_name=s.aws_region)
+    port = s.kafka_bootstrap.rsplit(":", 1)[-1] if ":" in s.kafka_bootstrap else "9094"
+    for page in elb.get_paginator("describe_load_balancers").paginate():
+        lbs = page["LoadBalancers"]
+        if not lbs:
+            continue
+        tags = elb.describe_tags(ResourceArns=[lb["LoadBalancerArn"] for lb in lbs])[
+            "TagDescriptions"
+        ]
+        for lb, td in zip(lbs, tags, strict=True):
+            if any(
+                t["Key"] == "service.k8s.aws/stack" and t["Value"] == s.kafka_bootstrap_lookup_tag
+                for t in td["Tags"]
+            ):
+                return f"{lb['DNSName']}:{port}"
+    raise RuntimeError(
+        f"no load balancer tagged service.k8s.aws/stack={s.kafka_bootstrap_lookup_tag}"
+    )
+
+
 def make_producer(s: Settings):
     from kafka import KafkaProducer
 
@@ -87,7 +116,7 @@ def make_consumer(s: Settings, group: str, topics: list[str]):
     from kafka import KafkaConsumer
 
     c = KafkaConsumer(
-        bootstrap_servers=s.kafka_bootstrap,
+        bootstrap_servers=resolve_bootstrap(s),
         **tls_kwargs(s),
         group_id=group,
         enable_auto_commit=False,  # the loop commits what it handled, never before
