@@ -67,11 +67,19 @@ cluster-up: ## rebuild the cluster (apply.yml, five gates) and bootstrap Argo CD
 	until [ "$$(gh run view $$RUN --json status --jq .status)" = completed ]; do sleep 20; done && gh run view $$RUN --json conclusion --jq '"apply: " + .conclusion'
 	aws eks update-kubeconfig --name steakllm --region us-east-1
 	$(MAKE) bootstrap-argo
+	$(MAKE) kafka-ca
 
 # The API is private-only (8.9) and the tailnet router that reaches it runs inside the cluster — which a
 # fresh cluster does not have yet (Incident 34). So the bootstrap goes through a Session Manager tunnel
 # via the NAT instance (in the VPC, SSM-managed): local 6443 → the API's private address, with the TLS
 # name pinned to the endpoint's hostname. Needs the Session Manager plugin on the laptop.
+# A rebuilt cluster mints a new Strimzi cluster CA; the ingest Lambda (outside the cluster) verifies the
+# Kafka door against the copy in Secrets Manager, so the copy is refreshed after every cluster-up
+# (Incident 47c). Waits for Kafka to be Ready first; never prints the certificate.
+kafka-ca: ## refresh steakllm/kafka-ca from the cluster's Strimzi CA (after cluster-up)
+	@n=0; until [ "$$(kubectl -n kafka get kafka steakllm -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)" = "True" ] || [ $$n -ge 60 ]; do echo "waiting for Kafka to be Ready…"; sleep 15; n=$$((n+1)); done
+	@kubectl -n kafka get secret steakllm-cluster-ca-cert -o jsonpath='{.data.ca\.crt}' | base64 -d | aws secretsmanager put-secret-value --secret-id steakllm/kafka-ca --secret-string file:///dev/stdin --query VersionStages --output text >/dev/null && echo "steakllm/kafka-ca refreshed from the cluster"
+
 bootstrap-argo: ## the one hand step, through an SSM tunnel: helm install argocd + the root Application
 	$(eval NAT := $(shell aws ec2 describe-instances --filters Name=tag:Name,Values=steakllm-nat Name=instance-state-name,Values=running --query 'Reservations[0].Instances[0].InstanceId' --output text))
 	$(eval API := $(shell aws eks describe-cluster --name steakllm --query cluster.endpoint --output text | sed 's#https://##'))
