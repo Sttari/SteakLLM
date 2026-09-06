@@ -108,7 +108,7 @@ def make_producer(s: Settings):
     from kafka import KafkaProducer
 
     return KafkaProducer(
-        bootstrap_servers=s.kafka_bootstrap, acks="all", linger_ms=5, **tls_kwargs(s)
+        bootstrap_servers=resolve_bootstrap(s), acks="all", linger_ms=5, **tls_kwargs(s)
     )
 
 

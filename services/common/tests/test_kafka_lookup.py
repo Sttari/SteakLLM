@@ -65,3 +65,30 @@ def test_no_match_is_an_error(monkeypatch):
     monkeypatch.setattr(boto3, "client", lambda *a, **k: FakeElb([]))
     with pytest.raises(RuntimeError):
         resolve_bootstrap(_settings(kafka_bootstrap_lookup_tag="kafka/none"))
+
+
+def test_the_producer_and_consumer_dial_the_resolved_address(monkeypatch):
+    import kafka as kafka_python
+
+    from steakllm_common.kafka import make_consumer, make_producer
+
+    seen = []
+
+    class FakeProducer:
+        def __init__(self, **kw):
+            seen.append(("producer", kw["bootstrap_servers"]))
+
+    class FakeConsumer:
+        def __init__(self, **kw):
+            seen.append(("consumer", kw["bootstrap_servers"]))
+
+        def subscribe(self, topics):
+            pass
+
+    monkeypatch.setattr(kafka_python, "KafkaProducer", FakeProducer)
+    monkeypatch.setattr(kafka_python, "KafkaConsumer", FakeConsumer)
+    monkeypatch.setattr("steakllm_common.kafka.resolve_bootstrap", lambda s: "door.elb:9094")
+    s = _settings(kafka_bootstrap="placeholder:9094")
+    make_producer(s)
+    make_consumer(s, "g", ["t"])
+    assert seen == [("producer", "door.elb:9094"), ("consumer", "door.elb:9094")]
