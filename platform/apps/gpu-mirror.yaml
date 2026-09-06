@@ -8,7 +8,7 @@ metadata:
   name: gpu-mirror
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "4"
+    argocd.argoproj.io/sync-wave: "6" # last: its guarded Jobs take minutes on a fresh node and nothing at sync time waits for them (Incident 43 taught the wave gate; 11.x hit it again)
 spec:
   project: default
   source:
