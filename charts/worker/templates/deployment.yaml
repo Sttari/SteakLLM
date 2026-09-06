@@ -7,6 +7,8 @@ metadata:
     {{- include "worker.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: Recreate # one consumer per group: the old pod leaves before the new one asks the near-full CPU node for room (Incident 45b)
   selector:
     matchLabels:
       {{- include "worker.selectorLabels" . | nindent 6 }}
