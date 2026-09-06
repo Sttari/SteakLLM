@@ -5,7 +5,7 @@
 variable "ingest_image_tag" {
   description = "steakllm/ingest image tag of the Lambda flavour (release.yml pushes lambda-sha-<7>)."
   type        = string
-  default     = "lambda-sha-3de5fb2"
+  default     = "lambda-sha-3f82e1a"
 }
 
 data "aws_iam_policy_document" "lambda_assume" {
