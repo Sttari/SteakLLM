@@ -352,6 +352,18 @@ The first summon launched the node in 38 s and had the weights on the NVMe by fi
 *Fix:* one egress rule, 443 to anywhere, so the one call rides the NAT (PR #97). An interface endpoint (≈ $7/month) would keep the group closed; noted for Step 11 if the pipeline grows more AWS calls.
 *Lesson:* a "tight" security group is a list of every dependency; write the list from the code's first hundred lines, not from the diagram. A Lambda that logs nothing and dies at its timeout is blocked on its first network call.
 
+**Incident 45 — the three workers crash-looped on start: `gateway_port` could not parse `tcp://172.20.39.96:8000`** (Sep 6 2026, Step 10.5)
+*Symptom:* embedder, summarizer and notifier in `CrashLoopBackOff`, each log ending in a pydantic `ValidationError` for `gateway_port`.
+*Cause:* Kubernetes' legacy service links inject `<SERVICE>_PORT=tcp://<ip>:<port>` for every Service in the namespace; the `gateway` Service produced `GATEWAY_PORT`, and pydantic-settings reads environment variables by name — an integer setting met a URI. Incident 39 (vLLM, `VLLM_PORT`) was the same mechanism eight days ago.
+*Fix:* `enableServiceLinks: false` in `charts/worker` (PR #101). The gateway itself survives only because its ConfigMap sets `GATEWAY_PORT` explicitly, which wins over the injected value.
+*Lesson:* second time, so it is now a rule: every pod chart in this repo sets `enableServiceLinks: false`; settings-driven programs and Service names collide by design of both.
+
+**Incident 45b — the fixed workers could not be scheduled: the CPU node's requests were at 97%** (Sep 6 2026, Step 10.5)
+*Symptom:* after the fix, the new pods sat `Pending` with `1 Insufficient cpu` while the old crash-looping ones kept running.
+*Cause:* a rolling update wants both generations at once; the node (m7g.xlarge, 4 vCPU) already had 3 835m of 3 920m requested by the platform (monitoring, Loki, Kafka, Argo, KEDA, Karpenter, the controller…), and each old pod held its 100m.
+*Fix:* `strategy: Recreate` for the single-replica consumers and a 50m request (PR #102). *Open item (Step 11):* the CPU node's request budget is spent; re-size or trim requests before Step 10's drills add load.
+*Lesson:* requests are promises, not usage; a full node refuses pods that would idle. Read `kubectl describe node` "Allocated resources" before adding tenants.
+
 **Open item — ECR scan-on-push did not scan the multi-arch images** (Sep 2 2026, Step 6.12)
 The five repositories have `scan_on_push = true` and the registry is in `BASIC` scanning mode, yet after the first release every image — the `sha-3432f6a` index and its two platform children — shows scan status `None`. Basic scanning does not scan an image index, and the children pushed as part of one did not trigger a scan either. Trivy in `release.yml` is the gate that actually ran (0 fixable CRITICALs per image), so nothing shipped unscanned. Candidates: a post-push step in `release.yml` that calls `ecr:StartImageScan` on each child digest and waits for the verdict (the release role would need that one action; bootstrap apply), or enhanced scanning (Inspector, paid) at Step 11. Decide before Step 8 pulls these images onto the node.
 
