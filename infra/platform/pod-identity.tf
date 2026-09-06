@@ -19,6 +19,7 @@ locals {
     gateway          = { namespace = "steakllm", policy = data.aws_iam_policy_document.gateway.json }
     embedder         = { namespace = "steakllm", policy = data.aws_iam_policy_document.embedder.json }
     notifier         = { namespace = "steakllm", policy = data.aws_iam_policy_document.notifier.json }
+    summarizer       = { namespace = "steakllm", policy = data.aws_iam_policy_document.summarizer.json }
     # The AWS Load Balancer Controller (10.3): the upstream reference policy for v3.5.0, verbatim (it creates
     # and tags load balancers, target groups, listeners and security-group rules; the wildcards are AWS's,
     # scoped by their own tag conditions). It builds the Kafka door's internal NLB now and Step 12's ALB later.
@@ -82,6 +83,21 @@ data "aws_iam_policy_document" "embedder" {
   }
 }
 
+# The summarizer (10.5): it reads the upload from S3 and writes the summary into the catalog row; the
+# model it talks to is the gateway's /v1 (never Bedrock or vLLM directly, ADR-0006), so no model rights.
+data "aws_iam_policy_document" "summarizer" {
+  statement {
+    sid       = "ReadDocuments"
+    actions   = ["s3:GetObject"]
+    resources = ["${local.bucket_arn}/quarantine/*", "${local.bucket_arn}/documents/*"]
+  }
+  statement {
+    sid       = "TheCatalog"
+    actions   = ["dynamodb:GetItem", "dynamodb:UpdateItem"]
+    resources = [local.table_arn]
+  }
+}
+
 data "aws_iam_policy_document" "notifier" {
   statement {
     sid       = "Publish"
@@ -92,6 +108,11 @@ data "aws_iam_policy_document" "notifier" {
     sid       = "TheCatalog"
     actions   = ["dynamodb:GetItem", "dynamodb:UpdateItem"]
     resources = [local.table_arn]
+  }
+  statement {
+    sid       = "TheWatchList"
+    actions   = ["dynamodb:Scan"]
+    resources = ["arn:aws:dynamodb:${var.region}:${local.account_id}:table/${var.watchlist_table}"]
   }
 }
 

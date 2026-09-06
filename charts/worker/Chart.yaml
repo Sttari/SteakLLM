@@ -1,0 +1,6 @@
+apiVersion: v2
+name: worker
+description: SteakLLM worker — one Kafka consumer (embedder, summarizer or notifier) on the CPU node; no Service, probes on 8080
+type: application
+version: 0.1.0
+appVersion: "sha"

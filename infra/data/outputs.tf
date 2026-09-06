@@ -9,3 +9,7 @@ output "catalog_table" {
 output "notifications_topic_arn" {
   value = aws_sns_topic.notifications.arn
 }
+
+output "watchlist_table" {
+  value = aws_dynamodb_table.watchlist.name
+}

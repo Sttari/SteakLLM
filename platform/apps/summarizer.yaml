@@ -1,0 +1,41 @@
+# The summarizer (Step 6.5 on the cluster): consumes documents, asks the gateway's /v1 for a summary with model=llm (so it inherits the routing policy), writes it into the catalog row, produces SummaryReady. Pod Identity steakllm/summarizer (S3 read, catalog). Wave 4, beside the gateway (Kafka, Qdrant and Ollama are up by then). The image tag is the
+# release's sha-<7>; bumping it is a pull request here.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: summarizer
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Sttari/SteakLLM.git
+    targetRevision: main
+    path: charts/worker
+    helm:
+      releaseName: summarizer
+      valuesObject:
+        name: summarizer
+        image:
+          repository: 066591056087.dkr.ecr.us-east-1.amazonaws.com/steakllm/summarizer
+          tag: sha-a50218b
+        config:
+          DOCUMENTS_BUCKET: steakllm-documents-066591056087
+          CATALOG_TABLE: steakllm-catalog
+          KAFKA_BOOTSTRAP: steakllm-kafka-bootstrap.kafka.svc:9092
+          TOPIC_DOCUMENTS: documents
+          TOPIC_DOCUMENTS_RETRY: documents.retry
+          TOPIC_DOCUMENTS_DLQ: documents.dlq
+          LOG_LEVEL: INFO
+          GATEWAY_URL: http://gateway.steakllm.svc:8000/v1
+          SUMMARIZER_PREFER_VLLM_SECONDS: "600"
+        secretEnv:
+          - { name: GATEWAY_API_KEY, secretName: gateway-keys, key: api_key } # the gateway key External Secrets syncs from steakllm/gateway
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: steakllm
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

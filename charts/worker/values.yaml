@@ -1,0 +1,31 @@
+# One chart, three consumers (Step 10.5). Each Application sets `name`, `image.tag`, its ConfigMap
+# `config` and, when it needs one, `secretEnv`. Everything else is shared: the steakllm.io/role=worker
+# label the NetworkPolicies select on (8.10), the restricted security context, the CPU node, probes on
+# the consumer's tiny HTTP server (steakllm_common.health), and a ServiceAccount named after the
+# service so Pod Identity (infra/platform) can hand it a role.
+name: worker
+image:
+  repository: 066591056087.dkr.ecr.us-east-1.amazonaws.com/steakllm/worker
+  tag: sha-0000000
+  pullPolicy: IfNotPresent
+replicaCount: 1
+config: {}         # non-secret settings, upper-cased steakllm_common.settings keys
+secretEnv: []      # [{ name: GATEWAY_API_KEY, secretName: gateway-keys, key: api_key }]
+resources:
+  requests: { cpu: 100m, memory: 256Mi }
+  limits: { cpu: "1", memory: 768Mi }
+nodeSelector:
+  steakllm.io/pool: cpu
+probePort: 8080
+terminationGracePeriodSeconds: 30 # the consumer loop stops after the record in hand (Incident 24)
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
