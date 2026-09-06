@@ -79,6 +79,9 @@ class Settings(BaseSettings):
         "quarterly-report",
     ]  # terms matched against tags and summary
     notify_sink: str = "stdout"  # "stdout" locally, "sns" in the cloud
+    watchlist_table: str | None = (
+        None  # DynamoDB table of {term}; when set it replaces watch_list at start
+    )
     sns_topic_arn: str | None = None
 
     # Gateway (server side)
