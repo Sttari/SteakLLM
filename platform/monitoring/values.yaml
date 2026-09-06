@@ -30,12 +30,30 @@ alertmanager:
       limits: { cpu: 100m, memory: 128Mi }
     nodeSelector:
       steakllm.io/pool: cpu
+  # the Alertmanager service account wears Pod Identity monitoring/kube-prometheus-stack-alertmanager →
+  # sns:Publish on the notifications topic (infra/platform, 11.5); every alert links a runbook.
   config:
     route:
-      receiver: "null" # Step 11 wires real receivers with a runbook per alert
+      receiver: sns-email
       group_by: [alertname, namespace]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      routes:
+        - receiver: "null"
+          matchers: [alertname = "Watchdog"] # the chart's heartbeat: never page on it
     receivers:
       - name: "null"
+      - name: sns-email
+        sns_configs:
+          - topic_arn: arn:aws:sns:us-east-1:066591056087:steakllm-notifications
+            sigv4:
+              region: us-east-1
+            subject: '[SteakLLM] {{ .CommonLabels.alertname }} ({{ .Status }})'
+            message: |
+              {{ range .Alerts }}{{ .Labels.alertname }} — {{ .Annotations.summary }}
+              runbook: {{ .Annotations.runbook_url }}
+              {{ end }}
 
 # ---- Grafana ----------------------------------------------------------------------------------------
 grafana:
@@ -88,8 +106,33 @@ grafana:
         revision: 1
         datasource: Prometheus
   additionalDataSources:
+    - name: Tempo
+      type: tempo
+      uid: tempo
+      url: http://tempo.logging.svc:3100
+      access: proxy
+      jsonData:
+        tracesToLogsV2:
+          datasourceUid: loki
+          filterByTraceID: true
+          spanStartTimeShift: -5m
+          spanEndTimeShift: 5m
+    - name: CloudWatch
+      type: cloudwatch
+      uid: cloudwatch
+      access: proxy
+      jsonData:
+        authType: default # the pod's Pod Identity role (infra/platform): cloudwatch:GetMetricData
+        defaultRegion: us-east-1
     - name: Loki
       type: loki
+      uid: loki
+      jsonData:
+        derivedFields:
+          - name: trace
+            matcherRegex: '"trace_id": "([a-f0-9]+)"'
+            url: '$${__value.raw}'
+            datasourceUid: tempo
       url: http://loki.logging.svc:3100
       access: proxy
       isDefault: false

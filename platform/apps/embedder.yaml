@@ -19,7 +19,7 @@ spec:
         name: embedder
         image:
           repository: 066591056087.dkr.ecr.us-east-1.amazonaws.com/steakllm/embedder
-          tag: sha-a50218b
+          tag: sha-a64304d
         config:
           DOCUMENTS_BUCKET: steakllm-documents-066591056087
           CATALOG_TABLE: steakllm-catalog
@@ -28,6 +28,7 @@ spec:
           TOPIC_DOCUMENTS_RETRY: documents.retry
           TOPIC_DOCUMENTS_DLQ: documents.dlq
           LOG_LEVEL: INFO
+          OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo.logging.svc:4318
           QDRANT_URL: http://qdrant.qdrant.svc:6333
           QDRANT_COLLECTION: documents
           EMBEDDINGS_URL: http://ollama.ollama.svc:11434/v1

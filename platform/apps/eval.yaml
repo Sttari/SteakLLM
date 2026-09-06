@@ -1,0 +1,23 @@
+# The nightly eval (11.6): a CronJob at 02:30 UTC (before the GPU reaper at 03:00) that asks both
+# backends the same twenty questions through the gateway and writes scores to S3 and CloudWatch.
+# Pod Identity steakllm/eval; the gateway key from the gateway-keys Secret. Wave 5.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: eval
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Sttari/SteakLLM.git
+    targetRevision: main
+    path: platform/eval
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: steakllm
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

@@ -32,6 +32,8 @@ config:
   EMBEDDING_DIM: "384"
   VLLM_URL: http://vllm.steakllm.svc:8000 # nothing answers until Step 9: the breaker opens and Bedrock answers
   GATEWAY_PORT: "8000"
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo.logging.svc:4318 # traces to Tempo (11.3)
+  VLLM_MODEL: Qwen/Qwen2.5-7B-Instruct # the served name vLLM answers to; the gateway maps llm/docs onto it
   GATEWAY_RPM: "60"
   GATEWAY_TOKENS_PER_DAY: "200000"
 

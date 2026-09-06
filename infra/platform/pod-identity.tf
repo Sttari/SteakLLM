@@ -10,7 +10,6 @@ locals {
   bucket_arn  = "arn:aws:s3:::${var.documents_bucket}"
   table_arn   = "arn:aws:dynamodb:${var.region}:${local.account_id}:table/${var.catalog_table}"
   topic_arn   = "arn:aws:sns:${var.region}:${local.account_id}:${var.notifications_topic}"
-  model_arn   = "arn:aws:bedrock:${var.region}::foundation-model/${var.bedrock_model_id}"
   secrets_arn = "arn:aws:secretsmanager:${var.region}:${local.account_id}:secret:${var.project}/*"
 
   # service account → { namespace, policy document }
@@ -24,6 +23,10 @@ locals {
     # and tags load balancers, target groups, listeners and security-group rules; the wildcards are AWS's,
     # scoped by their own tag conditions). It builds the Kafka door's internal NLB now and Step 12's ALB later.
     aws-load-balancer-controller = { namespace = "kube-system", policy = file("${path.module}/aws-load-balancer-controller-iam.json") }
+    # Step 11: alerts to the topic, Grafana's CloudWatch data source (the eval's metrics), the eval job itself
+    kube-prometheus-stack-alertmanager = { namespace = "monitoring", policy = data.aws_iam_policy_document.alertmanager.json }
+    kube-prometheus-stack-grafana      = { namespace = "monitoring", policy = data.aws_iam_policy_document.grafana.json }
+    eval                               = { namespace = "steakllm", policy = data.aws_iam_policy_document.eval.json }
   }
 }
 
@@ -64,9 +67,9 @@ data "aws_iam_policy_document" "gateway" {
     resources = [local.table_arn]
   }
   statement {
-    sid       = "InvokeTheOneModel"
+    sid       = "InvokeTheNovaModels"
     actions   = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
-    resources = [local.model_arn]
+    resources = [for m in var.bedrock_model_ids : "arn:aws:bedrock:${var.region}::foundation-model/${m}"]
   }
 }
 
@@ -95,6 +98,40 @@ data "aws_iam_policy_document" "summarizer" {
     sid       = "TheCatalog"
     actions   = ["dynamodb:GetItem", "dynamodb:UpdateItem"]
     resources = [local.table_arn]
+  }
+}
+
+data "aws_iam_policy_document" "alertmanager" {
+  statement {
+    sid       = "PageTheTopic"
+    actions   = ["sns:Publish"]
+    resources = [local.topic_arn]
+  }
+}
+
+data "aws_iam_policy_document" "grafana" {
+  statement {
+    sid       = "ReadCloudWatchMetrics"
+    actions   = ["cloudwatch:GetMetricData", "cloudwatch:ListMetrics", "cloudwatch:GetMetricStatistics"] # Describe/Get accept no resource ARN
+    resources = ["*"]
+  }
+}
+
+data "aws_iam_policy_document" "eval" {
+  statement {
+    sid       = "WriteTheResults"
+    actions   = ["s3:PutObject"]
+    resources = ["${local.bucket_arn}/eval/*"]
+  }
+  statement {
+    sid       = "PublishTheScores"
+    actions   = ["cloudwatch:PutMetricData"]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "cloudwatch:namespace"
+      values   = ["SteakLLM/Eval"]
+    }
   }
 }
 

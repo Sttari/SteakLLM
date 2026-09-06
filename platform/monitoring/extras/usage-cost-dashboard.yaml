@@ -1,0 +1,204 @@
+# The usage & cost dashboard (11.4), picked up by Grafana's sidecar through the label.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: steakllm-usage-cost
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  usage-cost.json: |
+    {
+     "title": "SteakLLM \u2014 usage & cost",
+     "uid": "steakllm-usage-cost",
+     "schemaVersion": 39,
+     "time": {
+      "from": "now-24h",
+      "to": "now"
+     },
+     "panels": [
+      {
+       "type": "timeseries",
+       "title": "chat requests/s by backend",
+       "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+       },
+       "targets": [
+        {
+         "expr": "sum by (backend) (rate(steakllm_chat_requests_total[5m]))",
+         "legendFormat": "{{backend}}"
+        }
+       ]
+      },
+      {
+       "type": "timeseries",
+       "title": "tokens/s by backend and direction",
+       "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+       },
+       "targets": [
+        {
+         "expr": "sum by (backend, direction) (rate(steakllm_chat_tokens_total[5m]))",
+         "legendFormat": "{{backend}} {{direction}}"
+        }
+       ]
+      },
+      {
+       "type": "timeseries",
+       "title": "chat latency p50 / p95 by backend",
+       "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+       },
+       "targets": [
+        {
+         "expr": "histogram_quantile(0.5, sum by (le, backend) (rate(steakllm_chat_latency_seconds_bucket[10m])))",
+         "legendFormat": "p50 {{backend}}"
+        },
+        {
+         "expr": "histogram_quantile(0.95, sum by (le, backend) (rate(steakllm_chat_latency_seconds_bucket[10m])))",
+         "legendFormat": "p95 {{backend}}"
+        }
+       ]
+      },
+      {
+       "type": "stat",
+       "title": "$ per million tokens \u2014 Bedrock (Nova Micro list: $0.035 in / $0.14 out)",
+       "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 6,
+        "h": 8
+       },
+       "targets": [
+        {
+         "expr": "(0.035 * sum(increase(steakllm_chat_tokens_total{backend=\"bedrock\",direction=\"in\"}[24h])) + 0.14 * sum(increase(steakllm_chat_tokens_total{backend=\"bedrock\",direction=\"out\"}[24h]))) / clamp_min(sum(increase(steakllm_chat_tokens_total{backend=\"bedrock\"}[24h])), 1)",
+         "legendFormat": "$/Mtok"
+        }
+       ],
+       "options": {
+        "reduceOptions": {
+         "calcs": [
+          "lastNotNull"
+         ]
+        }
+       },
+       "fieldConfig": {
+        "defaults": {
+         "unit": "currencyUSD",
+         "decimals": 3
+        }
+       }
+      },
+      {
+       "type": "stat",
+       "title": "$ per million tokens \u2014 vLLM (g6.xlarge $0.8048/h \u00d7 GPU hours \u00f7 generated tokens, 24 h)",
+       "gridPos": {
+        "x": 18,
+        "y": 8,
+        "w": 6,
+        "h": 8
+       },
+       "targets": [
+        {
+         "expr": "(0.8048 * sum_over_time(sum(kube_node_labels{label_steakllm_io_pool=\"gpu\"})[24h:1m]) / 60) / clamp_min(sum(increase(vllm:generation_tokens_total[24h])) / 1e6, 0.001)",
+         "legendFormat": "$/Mtok"
+        }
+       ],
+       "options": {
+        "reduceOptions": {
+         "calcs": [
+          "lastNotNull"
+         ]
+        }
+       },
+       "fieldConfig": {
+        "defaults": {
+         "unit": "currencyUSD",
+         "decimals": 3
+        }
+       }
+      },
+      {
+       "type": "timeseries",
+       "title": "GPU nodes (count) and vLLM ready replicas",
+       "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 6
+       },
+       "targets": [
+        {
+         "expr": "sum(kube_node_labels{label_steakllm_io_pool=\"gpu\"})",
+         "legendFormat": "gpu nodes"
+        },
+        {
+         "expr": "sum(kube_deployment_status_replicas_ready{deployment=\"vllm\"})",
+         "legendFormat": "vllm ready"
+        }
+       ]
+      },
+      {
+       "type": "timeseries",
+       "title": "nightly eval score by backend (CloudWatch SteakLLM/Eval)",
+       "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 6
+       },
+       "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+       },
+       "targets": [
+        {
+         "namespace": "SteakLLM/Eval",
+         "metricName": "score",
+         "dimensions": {
+          "backend": "*"
+         },
+         "statistic": "Average",
+         "region": "us-east-1",
+         "period": "86400"
+        }
+       ]
+      },
+      {
+       "type": "stat",
+       "title": "SLO error budgets remaining (30 d)",
+       "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 5
+       },
+       "targets": [
+        {
+         "expr": "1 - (sum(rate(steakllm_chat_latency_seconds_count[30d])) - sum(rate(steakllm_chat_latency_seconds_bucket{le=\"10\"}[30d]))) / clamp_min(sum(rate(steakllm_chat_latency_seconds_count[30d])), 1e-9) / 0.01",
+         "legendFormat": "chat p95<10s (99%)"
+        },
+        {
+         "expr": "1 - (sum(rate(steakllm_chat_requests_total{status!=\"ok\"}[30d])) / clamp_min(sum(rate(steakllm_chat_requests_total[30d])), 1e-9)) / 0.001",
+         "legendFormat": "chat success (99.9%)"
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "unit": "percentunit",
+         "min": 0,
+         "max": 1
+        }
+       }
+      }
+     ]
+    }

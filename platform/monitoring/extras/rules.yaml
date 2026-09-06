@@ -1,0 +1,70 @@
+# SLO burn-rate and operational alerts (11.5). Every alert names a runbook; Alertmanager sends them to
+# the notifications topic. The SLIs are written in docs/slo.md. Argo-owned (the monitoring Application's
+# second source).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: steakllm
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack # the operator selects rules by this label
+spec:
+  groups:
+    - name: steakllm
+      rules:
+      - alert: SteakLLMChatLatencySLOBurn
+        expr: (histogram_quantile(0.95, sum by (le) (rate(steakllm_chat_latency_seconds_bucket[1h]))) > 10) and (histogram_quantile(0.95, sum by (le) (rate(steakllm_chat_latency_seconds_bucket[5m]))) > 10)
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "chat p95 latency SLO burning (14× over 1h and 5m)"
+          runbook_url: https://github.com/Sttari/SteakLLM/blob/main/docs/runbooks/alerts/SteakLLMChatLatencySLOBurn.md
+      - alert: SteakLLMUploadToIndexedSLOBurn
+        expr: sum(kafka_consumergroup_lag{group="steakllm-embedder"}) > 0 and max_over_time(sum(kafka_consumergroup_lag{group="steakllm-embedder"})[10m:1m]) > 0
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "upload → indexed taking longer than 60 s (embedder lag)"
+          runbook_url: https://github.com/Sttari/SteakLLM/blob/main/docs/runbooks/alerts/SteakLLMUploadToIndexedSLOBurn.md
+      - alert: IngestDLQNotEmpty
+        expr: steakllm_ingest_dlq_messages > 0 # fed by the CloudWatch exporter (11.7 open item); until then the 10.4 CloudWatch alarm pages
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "a doorbell event is parked in the dead-letter queue"
+          runbook_url: https://github.com/Sttari/SteakLLM/blob/main/docs/runbooks/alerts/IngestDLQNotEmpty.md
+      - alert: KafkaConsumerLagHigh
+        expr: sum by (group) (kafka_consumergroup_lag{group=~"steakllm-.*"}) > 100
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "a consumer group's lag stays above 100 for 10 m"
+          runbook_url: https://github.com/Sttari/SteakLLM/blob/main/docs/runbooks/alerts/KafkaConsumerLagHigh.md
+      - alert: VllmNotReadyWhileSummoned
+        expr: sum(keda_scaler_active{scaledObject="vllm"}) > 0 and sum(kube_deployment_status_replicas_ready{deployment="vllm"}) == 0
+        for: 12m
+        labels: { severity: warning }
+        annotations:
+          summary: "KEDA wants vLLM but no replica is ready after 12 m"
+          runbook_url: https://github.com/Sttari/SteakLLM/blob/main/docs/runbooks/alerts/VllmNotReadyWhileSummoned.md
+      - alert: GpuNodeLingering
+        expr: sum(kube_node_labels{label_steakllm_io_pool="gpu"}) > 0 and sum(kube_deployment_spec_replicas{deployment="vllm"}) == 0
+        for: 60m
+        labels: { severity: critical }
+        annotations:
+          summary: "a GPU node has lived an hour with vLLM at zero"
+          runbook_url: https://github.com/Sttari/SteakLLM/blob/main/docs/runbooks/alerts/GpuNodeLingering.md
+      - alert: CpuNodeRequestsSaturated
+        expr: sum(kube_pod_container_resource_requests{resource="cpu", node=~".*"}) / sum(kube_node_status_allocatable{resource="cpu"}) > 0.95
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "the CPU node's CPU requests exceed 95% of allocatable"
+          runbook_url: https://github.com/Sttari/SteakLLM/blob/main/docs/runbooks/alerts/CpuNodeRequestsSaturated.md
+      - alert: SteakLLMTargetDown
+        expr: up{namespace=~"steakllm|kafka|qdrant|ollama|logging"} == 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "one of our scrape targets is down"
+          runbook_url: https://github.com/Sttari/SteakLLM/blob/main/docs/runbooks/alerts/SteakLLMTargetDown.md

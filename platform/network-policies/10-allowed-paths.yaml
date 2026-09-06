@@ -22,6 +22,8 @@ spec:
       ports: [{ protocol: TCP, port: 11434 }]
     - to: [{ podSelector: { matchLabels: { app.kubernetes.io/name: vllm } } }]
       ports: [{ protocol: TCP, port: 8000 }]
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: logging } } }] # traces to Tempo (11.3)
+      ports: [{ protocol: TCP, port: 4318 }]
 ---
 # → gateway: Open WebUI, the summarizer (Step 10), Prometheus, the Tailscale proxy (8.9), and anything
 # in the steakllm namespace itself (the workers call the gateway's /v1).
@@ -59,6 +61,8 @@ spec:
       ports: [{ protocol: TCP, port: 11434 }]
     - to: [{ podSelector: { matchLabels: { app.kubernetes.io/name: gateway } } }]
       ports: [{ protocol: TCP, port: 8000 }]
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: logging } } }] # traces to Tempo (11.3)
+      ports: [{ protocol: TCP, port: 4318 }]
     - to: [{ podSelector: { matchLabels: { app.kubernetes.io/name: vllm } } }]
       ports: [{ protocol: TCP, port: 8000 }]
 ---

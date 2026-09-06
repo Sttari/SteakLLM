@@ -19,7 +19,7 @@ spec:
         name: summarizer
         image:
           repository: 066591056087.dkr.ecr.us-east-1.amazonaws.com/steakllm/summarizer
-          tag: sha-a50218b
+          tag: sha-a64304d
         config:
           DOCUMENTS_BUCKET: steakllm-documents-066591056087
           CATALOG_TABLE: steakllm-catalog
@@ -28,6 +28,7 @@ spec:
           TOPIC_DOCUMENTS_RETRY: documents.retry
           TOPIC_DOCUMENTS_DLQ: documents.dlq
           LOG_LEVEL: INFO
+          OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo.logging.svc:4318
           GATEWAY_URL: http://gateway.steakllm.svc:8000/v1
           SUMMARIZER_PREFER_VLLM_SECONDS: "0" # never wait for the GPU: the 90 s promise (11.6)
         secretEnv:
