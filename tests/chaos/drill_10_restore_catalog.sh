@@ -5,7 +5,7 @@
 # human-only here). Deletion protection is not touched: PITR restores into a new table.
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
-DOC=$(aws dynamodb scan --table-name $TABLE --max-items 1 --query 'Items[0].doc_id.S' --output text)
+DOC=$(aws dynamodb scan --table-name $TABLE --limit 1 --query 'Items[0].doc_id.S' --output text | head -n 1)
 if [ -z "$DOC" ] || [ "$DOC" = "None" ]; then echo "no rows to corrupt; run a drill that uploads first"; exit 1; fi
 GOOD=$(aws dynamodb get-item --table-name $TABLE --key "{\"doc_id\":{\"S\":\"$DOC\"}}" --query 'Item.status.S' --output text)
 sleep 65; T=$(date -u -v-60S +%FT%TZ 2>/dev/null || date -u -d '60 seconds ago' +%FT%TZ)
