@@ -109,7 +109,7 @@ grafana:
     - name: Tempo
       type: tempo
       uid: tempo
-      url: http://tempo.logging.svc:3100
+      url: http://tempo.logging.svc:3200 # Tempo's HTTP API; 3100 is Loki's
       access: proxy
       jsonData:
         tracesToLogsV2:
