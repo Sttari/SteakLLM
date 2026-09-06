@@ -8,7 +8,7 @@ KEY=$(key)
 D1=$(upload b1); stamp "memo ${D1:0:8} uploaded"
 until [ "$(status "$D1")" != "-" ]; do sleep 2; done
 stamp "row exists → killing the broker's process now (named: kubectl -n kafka exec steakllm-combined-0 -- kill 1)"
-kubectl -n kafka exec steakllm-combined-0 -- kill 1 && stamp "killed"
+kubectl -n kafka exec steakllm-combined-0 -- sh -c 'for p in /proc/[0-9]*; do c=$(tr "\0" " " < $p/cmdline 2>/dev/null); case "$c" in *kafka.Kafka*) kill -9 ${p#/proc/} && echo "SIGKILL to the JVM pid ${p#/proc/}";; esac; done' && stamp "killed the Kafka JVM (pid 1 is the entrypoint script and ignores signals from inside its namespace)"
 D2=$(upload b2); stamp "memo ${D2:0:8} uploaded during the outage (the Lambda retries its produce)"
 n=0; until kubectl -n kafka get kafka steakllm -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null | grep -q True && [ "$(kubectl -n kafka get pod steakllm-combined-0 -o jsonpath='{.status.containerStatuses[0].ready}')" = "true" ]; do sleep 5; n=$((n+5)); done
 stamp "broker Ready again after ≈ $n s (restarts=$(kubectl -n kafka get pod steakllm-combined-0 -o jsonpath='{.status.containerStatuses[0].restartCount}'))"

@@ -11,16 +11,17 @@ FN=steakllm-ingest
 ENV_JSON=$(aws lambda get-function-configuration --function-name $FN --query 'Environment.Variables' --output json)
 GOOD=$(echo "$ENV_JSON" | python3 -c 'import sys,json; print(json.load(sys.stdin)["KAFKA_BOOTSTRAP"])')
 stamp "breaking the doorbell (named): KAFKA_BOOTSTRAP → 10.255.255.1:9094"
-aws lambda update-function-configuration --function-name $FN --environment "Variables=$(echo "$ENV_JSON" | python3 -c 'import sys,json; e=json.load(sys.stdin); e["KAFKA_BOOTSTRAP"]="10.255.255.1:9094"; print(json.dumps(e))')" --query LastUpdateStatus --output text
+aws lambda update-function-configuration --function-name $FN --environment "$(echo "$ENV_JSON" | python3 -c 'import sys,json; e=json.load(sys.stdin); e["KAFKA_BOOTSTRAP"]="10.255.255.1:9094"; e.pop("KAFKA_BOOTSTRAP_LOOKUP_TAG", None); print(json.dumps({"Variables": e}))')" --query LastUpdateStatus --output text
 aws lambda wait function-updated --function-name $FN
 D1=$(upload d1); D2=$(upload d2); stamp "two memos uploaded during the outage: ${D1:0:8} ${D2:0:8}"
 Q=$(aws sqs get-queue-url --queue-name steakllm-ingest-dlq --query QueueUrl --output text)
-n=0; until [ "$(aws sqs get-queue-attributes --queue-url "$Q" --attribute-names ApproximateNumberOfMessages --query Attributes.ApproximateNumberOfMessages --output text)" -ge 2 ] || [ $n -ge 900 ]; do sleep 15; n=$((n+15)); done
+BASE=$(aws sqs get-queue-attributes --queue-url "$Q" --attribute-names ApproximateNumberOfMessages --query Attributes.ApproximateNumberOfMessages --output text); stamp "DLQ depth before: $BASE"
+n=0; until [ "$(aws sqs get-queue-attributes --queue-url "$Q" --attribute-names ApproximateNumberOfMessages --query Attributes.ApproximateNumberOfMessages --output text)" -ge $((BASE+2)) ] || [ $n -ge 900 ]; do sleep 15; n=$((n+15)); done
 stamp "DLQ depth $(aws sqs get-queue-attributes --queue-url "$Q" --attribute-names ApproximateNumberOfMessages --query Attributes.ApproximateNumberOfMessages --output text) after ≈ $n s (Lambda: 60 s timeout × 3 attempts each) · alarm: $(aws cloudwatch describe-alarms --alarm-names steakllm-ingest-dlq-not-empty --query 'MetricAlarms[0].StateValue' --output text)"
 stamp "restoring the doorbell"
-aws lambda update-function-configuration --function-name $FN --environment "Variables=$ENV_JSON" --query LastUpdateStatus --output text; aws lambda wait function-updated --function-name $FN
+aws lambda update-function-configuration --function-name $FN --environment "$(echo "$ENV_JSON" | python3 -c 'import sys,json; print(json.dumps({"Variables": json.load(sys.stdin)}))')" --query LastUpdateStatus --output text; aws lambda wait function-updated --function-name $FN
 stamp "replaying the DLQ"
-python3 "$(dirname "$0")/replay_dlq.py" "$Q" $FN
+uv run --quiet "$(dirname "$0")/replay_dlq.py" "$Q" $FN
 for d in $D1 $D2; do wait_status "$d" summarized 300 && stamp "${d:0:8} summarized" || stamp "${d:0:8} status=$(status "$d")"; done
 for d in $D1 $D2; do stamp "${d:0:8}: events=$(events "$d")"; done
 echo "pass when both memos are summarized once each. Then a human empties the queue: aws sqs purge-queue --queue-url $Q"

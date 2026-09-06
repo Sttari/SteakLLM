@@ -370,6 +370,18 @@ The first summon launched the node in 38 s and had the weights on the NVMe by fi
 *Fix:* the refusal (written in 10.3) held the line — nothing was torn down with NLBs alive. Recovery: the controller Application re-applied by hand (named), the Services finalized within 30 s, `cluster-down` re-run. The Makefile now cascades `kafka` first, waits for the LB Services to go while the controller lives, and removes the controller after that (PR #104).
 *Lesson:* a finalizer is a dependency on a running controller; take down the objects that carry it before the controller that clears it. Every teardown step should name what it relies on still being alive.
 
+**Incident 47 — `cluster-up` could not bring the cluster back: `infra/pipeline` looked the Kafka door's NLB up in Terraform, and with the cluster down the lookup found nothing** (Sep 6 2026, Step 10.6)
+*Symptom:* `apply (pipeline)` failed with `Search returned 0 results` on `data.aws_lb.kafka_door`; eks, platform and gpu were cancelled behind it; `cluster-up` ended with `No cluster found for name: steakllm`.
+*Cause:* 10.4 baked the NLB's DNS name into the Lambda's environment through a data source. The NLB is created by the controller inside the cluster and renamed on every rebuild; a module that must apply while the cluster is down cannot depend on it.
+*Fix:* the Lambda resolves the door at start by the controller's `service.k8s.aws/stack` tag (`KAFKA_BOOTSTRAP_LOOKUP_TAG`, `steakllm-common`, PR #106); the module keeps only the tag name and the port and grants `elasticloadbalancing:Describe*` (PR #107). Applies with the cluster down, which is the point.
+*Lesson:* anything the cluster creates is not a Terraform input. Modules that must apply on day zero may name a thing the cluster will create, never read it.
+
+**Incident 47b — the fix shipped a function nobody called** (Sep 6 2026, Step 10.6)
+The first drill run rang the doorbell nine times for nothing: the Lambda dialled the placeholder host `kafka-door:9094`. `resolve_bootstrap()` was in the image, but the edit that should have made `make_producer` and `make_consumer` call it targeted a one-line call that ruff had reformatted onto three lines, and `str.replace` matched nothing, silently. *Fix:* both factories dial the resolved address, with a test that fakes kafka-python and asserts the address it receives (PR #108); image bump (PR #109). *Lesson:* an edit script must assert its replacement count; and a feature needs a test at the seam where it is used, not only where it is defined.
+
+**Incident 47c — a rebuilt cluster mints a new Kafka CA, and the Lambda's copy in Secrets Manager goes stale** (Sep 6 2026, Step 10.6)
+Strimzi's cluster CA is born with the cluster; `steakllm/kafka-ca` held the previous cluster's certificate after `cluster-up`, so the first doorbell ring would have failed its TLS check even with the address right. Refreshed by hand (named); `make cluster-up` now ends with `make kafka-ca`, which waits for Kafka to be Ready and re-fills the slot. *Lesson:* every secret derived from the cluster is part of the rebuild, or it is a time bomb.
+
 **Open item — ECR scan-on-push did not scan the multi-arch images** (Sep 2 2026, Step 6.12)
 The five repositories have `scan_on_push = true` and the registry is in `BASIC` scanning mode, yet after the first release every image — the `sha-3432f6a` index and its two platform children — shows scan status `None`. Basic scanning does not scan an image index, and the children pushed as part of one did not trigger a scan either. Trivy in `release.yml` is the gate that actually ran (0 fixable CRITICALs per image), so nothing shipped unscanned. Candidates: a post-push step in `release.yml` that calls `ecr:StartImageScan` on each child digest and waits for the verdict (the release role would need that one action; bootstrap apply), or enhanced scanning (Inspector, paid) at Step 11. Decide before Step 8 pulls these images onto the node.
 
@@ -483,6 +495,14 @@ one chat (Bedrock) → KEDA ACTIVE 29 s → node Ready 68 s (i-096df6775b94c7e7d
 vLLM's /metrics scraped through the new ServiceMonitor (target up 30 s after Ready; 96 `vllm:` series; `vllm:generation_tokens_total` 7 075 after the run). The Bedrock run's first chat summoned the GPU through KEDA; EC2 had no g6.xlarge, g6.2xlarge or g5.xlarge in either zone at 22:33 and Karpenter launched a g6.xlarge on its retry three minutes later; vLLM was Ready 10 min 7 s after that chat. Afterwards `make gpu-down` emptied the pool in 6 min 14 s (KEDA paused at 0, NodeClaim removed, instance terminated, `gpu-check` passed).
 
 Reading it: Bedrock's Nova Micro is the low-latency floor at concurrency 1; vLLM on one L4 wins on tokens/s as concurrency rises (continuous batching), at the cost of p95. The comparison proper is Step 11's; this is its first row. The 429 column is the gateway's quota, not a backend limit.
+
+**Step 10.6 — drills 05–07** (Sep 6 2026, on the cluster)
+
+| Drill | Result |
+|---|---|
+| 05 the embedder dies mid-batch | PASS — the embedder's process killed 8 s in (one restart); all three memos `summarized` with exactly one DocumentUploaded, one DocumentIndexed, one SummaryReady and one point each, no doubles. Honest note: these memos are tiny and the pipeline takes ≈ 2 s, so the kill landed at the tail of the batch; a bigger fixture would put it mid-batch. |
+| 06 the broker dies mid-batch | PASS — the Kafka JVM killed with SIGKILL (pid 1 is tini and ignores signals from inside its namespace); the container restarted once; a memo uploaded during the outage was summarized 8 s later; both memos exactly once with one point each; nothing parked. The readiness stopwatch is coarse (the pod was Ready again within the script's first check). |
+| 07 the doorbell off during uploads | PASS — the Lambda's Kafka address pointed at a dead host (named); two uploads parked in the DLQ after 285 s (three 60 s attempts each), the alarm went to ALARM; address restored; `replay_dlq.py` (uv) invoked the Lambda with each parked event: the two memos ended `summarized` exactly once, and a stale duplicate replay produced nothing (the handler's already-recorded guard). The parked copies stay until a human purges the queue. |
 
 ## 5. Lessons (running list)
 
