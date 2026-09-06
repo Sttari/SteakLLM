@@ -112,16 +112,21 @@ cluster-down: ## take the workloads down through Argo, remove their volumes, the
 	@# Strimzi owns the Kafka door's Services (10.3) and would recreate them here; they go with the kafka Application in 2/4.
 	-kubectl get svc -A --field-selector spec.type=LoadBalancer -o json 2>/dev/null | python3 -c 'import sys,json; [print("-n", i["metadata"]["namespace"], i["metadata"]["name"]) for i in json.load(sys.stdin)["items"] if not i["metadata"].get("labels",{}).get("strimzi.io/cluster")]' | xargs -r -L1 kubectl delete svc
 	@echo "2/4 Taking the workloads down through Argo (cascade), so their claims can be released…"
+	@# The Kafka door first (10.3): its LoadBalancer Services carry the controller's finalizer, so the kafka Application
+	@# must finish before Strimzi and the AWS Load Balancer Controller go — otherwise the NLBs outlive the cluster (Incident 46).
+	-kubectl -n argocd patch application kafka --type merge -p '{"metadata":{"finalizers":["resources-finalizer.argocd.argoproj.io"]}}' >/dev/null && kubectl -n argocd delete application kafka --wait=false
+	@n=0; until [ "$$(kubectl get svc -A --field-selector spec.type=LoadBalancer --no-headers 2>/dev/null | wc -l | tr -d ' ')" = 0 ] || [ $$n -ge 40 ]; do echo "waiting for the Kafka door's Services (and their NLBs) to go…"; sleep 15; n=$$((n+1)); done
 	@# Every workload Application gets the cascade finalizer, then is removed. Kept alive: argocd (must outlive its
 	@# children), root (removed last, without cascade), namespaces (would take everything with them), storage,
 	@# network-policies, and tailscale + tailscale-config — the subnet router is the laptop's ONLY path to the
 	@# private API; taking it down mid-run cut this very target off from the cluster (Incident 33b).
-	-for a in $$(kubectl -n argocd get applications -o jsonpath='{.items[*].metadata.name}'); do case $$a in argocd|root|namespaces|storage|network-policies|tailscale|tailscale-config) ;; *) \
+	-for a in $$(kubectl -n argocd get applications -o jsonpath='{.items[*].metadata.name}'); do case $$a in argocd|root|namespaces|storage|network-policies|tailscale|tailscale-config|aws-load-balancer-controller) ;; *) \
 	  kubectl -n argocd patch application $$a --type merge -p '{"metadata":{"finalizers":["resources-finalizer.argocd.argoproj.io"]}}' >/dev/null && kubectl -n argocd delete application $$a --wait=false;; esac; done
 	-kubectl -n argocd patch application root --type merge -p '{"metadata":{"finalizers":null}}' >/dev/null
 	-kubectl -n argocd delete application root --wait=false
 	@n=0; until [ "$$(kubectl get pods -A --request-timeout=10s --no-headers 2>/dev/null | grep -vE '^(kube-system|argocd|tailscale|external-secrets) ' | wc -l | tr -d ' ')" = 0 ] || [ $$n -ge 40 ]; do echo "waiting for workload pods to go…"; sleep 15; n=$$((n+1)); done
 	@n=0; until [ "$$(aws elbv2 describe-load-balancers --query 'length(LoadBalancers)' --output text)" = 0 ] || [ $$n -ge 40 ]; do echo "waiting for load balancers to go (the Kafka door's NLBs leave with the kafka Application)…"; sleep 15; n=$$((n+1)); done
+	-kubectl -n argocd patch application aws-load-balancer-controller --type merge -p '{"metadata":{"finalizers":["resources-finalizer.argocd.argoproj.io"]}}' >/dev/null && kubectl -n argocd delete application aws-load-balancer-controller --wait=false
 	@if [ "$$(aws elbv2 describe-load-balancers --query 'length(LoadBalancers)' --output text)" != 0 ]; then echo "REFUSING: load balancers still exist; they would outlive the cluster and bill"; exit 1; fi
 	@echo "3/4 Deleting every PersistentVolumeClaim so the EBS driver removes the volumes (a torn-down cluster cannot)…"
 	-kubectl delete pvc --all --all-namespaces --wait=true --timeout=5m
