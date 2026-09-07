@@ -33,10 +33,10 @@ jobs:
     env:
       REPO: steakllm/${{ matrix.service }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Assume the release role (OIDC, subject ref:refs/heads/main)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ vars.AWS_RELEASE_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
@@ -57,14 +57,14 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: docker/setup-qemu-action@v3         # arm64 layers are built under emulation on an amd64 runner
+      - uses: docker/setup-qemu-action@v4         # arm64 layers are built under emulation on an amd64 runner
         if: steps.check.outputs.exists == 'false'
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
         if: steps.check.outputs.exists == 'false'
 
       - name: Build amd64 into the local daemon, for the scan
         if: steps.check.outputs.exists == 'false'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: services
           file: services/${{ matrix.service }}/Dockerfile
@@ -85,7 +85,7 @@ jobs:
 
       - name: Build arm64 + amd64 and push
         if: steps.check.outputs.exists == 'false'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: services
           file: services/${{ matrix.service }}/Dockerfile
@@ -97,7 +97,7 @@ jobs:
 
       - name: Build the Lambda flavour (ingest only) and push as lambda-<tag>
         if: matrix.service == 'ingest' && steps.check.outputs.exists == 'false'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: services
           file: services/ingest/Dockerfile
