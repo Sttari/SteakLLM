@@ -19,7 +19,7 @@ RUN cd ingest && uv sync --frozen --no-dev --no-editable
 FROM build AS build-lambda
 RUN cd ingest && uv pip install --python .venv/bin/python awslambdaric
 
-FROM python:3.12-slim-bookworm AS lambda
+FROM python:3.14-slim-bookworm AS lambda
 RUN useradd --uid 10001 --create-home app
 WORKDIR /app/ingest
 COPY --from=build-lambda --chown=app:app /app/ingest/.venv /app/ingest/.venv
@@ -29,7 +29,7 @@ ENTRYPOINT ["python", "-m", "awslambdaric"]
 CMD ["steakllm_ingest.main.lambda_handler"]
 
 # --- the service flavour (default target): the local runner / watcher
-FROM python:3.12-slim-bookworm
+FROM python:3.14-slim-bookworm
 RUN useradd --uid 10001 --create-home app
 WORKDIR /app/ingest
 COPY --from=build --chown=app:app /app/ingest/.venv /app/ingest/.venv
