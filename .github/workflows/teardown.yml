@@ -42,15 +42,15 @@ jobs:
           echo "::error::confirm ('${{ inputs.confirm }}') does not match module ('${{ inputs.module }}'); nothing was touched"
           exit 1
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: "1.16.0"
           terraform_wrapper: false
 
       - name: Assume the apply role (OIDC, subject environment:production)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
