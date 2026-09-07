@@ -13,7 +13,7 @@ COPY embedder/src embedder/src
 # --no-editable: path dependencies are installed as real packages into the venv, not links to /app
 RUN cd embedder && uv sync --frozen --no-dev --no-editable
 
-FROM python:3.12-slim-bookworm
+FROM python:3.14-slim-bookworm
 RUN useradd --uid 10001 --create-home app
 WORKDIR /app/embedder
 COPY --from=build --chown=app:app /app/embedder/.venv /app/embedder/.venv
