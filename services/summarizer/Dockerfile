@@ -13,7 +13,7 @@ COPY summarizer/src summarizer/src
 # --no-editable: path dependencies are installed as real packages into the venv, not links to /app
 RUN cd summarizer && uv sync --frozen --no-dev --no-editable
 
-FROM python:3.12-slim-bookworm
+FROM python:3.14-slim-bookworm
 RUN useradd --uid 10001 --create-home app
 WORKDIR /app/summarizer
 COPY --from=build --chown=app:app /app/summarizer/.venv /app/summarizer/.venv
