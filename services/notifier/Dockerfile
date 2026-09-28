@@ -13,7 +13,7 @@ COPY notifier/src notifier/src
 # --no-editable: path dependencies are installed as real packages into the venv, not links to /app
 RUN cd notifier && uv sync --frozen --no-dev --no-editable
 
-FROM python:3.12-slim-bookworm
+FROM python:3.14-slim-bookworm
 RUN useradd --uid 10001 --create-home app
 WORKDIR /app/notifier
 COPY --from=build --chown=app:app /app/notifier/.venv /app/notifier/.venv
